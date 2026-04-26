@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  username       String    @unique
+  phoneNumber    String?   @unique
+  hashedPassword String?
+  displayName    String
+  avatarUrl      String?
+  bio            String?   @db.Text
+  status         String?
+  lastSeen       DateTime  @default(now())
+  
+  // Статус онлайн
+  isOnline       Boolean   @default(false)
+  lastActive     DateTime  @default(now())
+  
+  settings       UserSettings?
+
+  // Отношения
+  chats          Chat[]    @relation("UserChats")
+  messages       Message[]
+  chatMembers    ChatMember[]
+  readReceipts   ReadReceipt[]
+  
+  ownedServers   Server[]  @relation("ServerOwner")
+  memberServers  Server[]  @relation("ServerMembers")
+  
+  // Инвайты, созданные пользователем
+  createdInvites Invite[]  @relation("InviteCreator")
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model UserSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  
+  // 🔐 Приватность
+  showOnlineStatus    Boolean  @default(true)
+  showLastSeen        Boolean  @default(true)
+  allowDirectMessages String   @default("everyone") // "everyone" | "contacts" | "nobody"
+  allowAddToChats     String   @default("everyone")
+  profileVisibility   String   @default("public")   // "public" | "contacts" | "private"
+  
+  // 🎨 Внешний вид
+  theme               String   @default("system")   // "light" | "dark" | "system"
+  chatTheme           String?
+  messageFontSize     String   @default("medium")   // "small" | "medium" | "large"
+  accentColor         String?
+  chatBackground      String?
+  
+  // 🔔 Уведомления
+  pushNotifications   Boolean  @default(true)
+  soundNotifications  Boolean  @default(true)
+  vibration           Boolean  @default(true)
+  showNotificationPreview Boolean @default(true)
+  mutedChats          String[]
+  
+  // 💬 Поведение чата
+  sendReadReceipts    Boolean  @default(true)
+  showTypingIndicator Boolean  @default(true)
+  autoDownloadMedia   String   @default("wifi")     // "always" | "wifi" | "never"
+  compressImages      Boolean  @default(true)
+  
+  // ⚙️ Гибкие предпочтения
+  preferences         Json?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+enum ChatType {
+  PRIVATE
+  GROUP
+  CHANNEL
+}
+
+enum AccessType {
+  PUBLIC    
+  LINK_ONLY 
+  PRIVATE   
+}
+
+enum ChatRole {
+  CREATOR
+  ADMIN
+  MEMBER
+}
+
+model Server {
+  id          String     @id @default(cuid())
+  name        String
+  imageUrl    String?
+  inviteCode  String     @unique @default(uuid())
+  access      AccessType @default(PUBLIC)
+  
+  ownerId     String
+  owner       User       @relation("ServerOwner", fields: [ownerId], references: [id])
+  
+  chats       Chat[]
+  members     User[]     @relation("ServerMembers")
+  
+  // Инвайты для сервера (теперь связь правильная)
+  invites     Invite[]   @relation("ServerInvites")
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Chat {
+  id          String     @id @default(cuid())
+  name        String?
+  imageUrl    String?
+  type        ChatType
+  access      AccessType @default(PUBLIC)
+  inviteCode  String?    @unique @default(uuid())
+
+  serverId    String?
+  server      Server?    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  users       User[]     @relation("UserChats")
+  members     ChatMember[]
+  messages    Message[]
+  readReceipts ReadReceipt[]
+  
+  // Инвайты для чата
+  invites     Invite[]   @relation("ChatInvites")
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt @default(now())
+}
+
+model ChatMember {
+  id        String   @id @default(cuid())
+  role      ChatRole @default(MEMBER)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, chatId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  fileUrl   String?
+  fileType  String?
+  reactions Json?
+  forwardedFromMessageId String?
+  forwardedFromChatId    String?
+  forwardedFromChatName  String?
+  forwardedFromChatType  ChatType?
+  forwardedFromUserId    String?
+  forwardedFromUserName  String?
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  replyToId   String?
+  replyTo     Message? @relation("MessageReply", fields: [replyToId], references: [id])
+  replies     Message[] @relation("MessageReply")
+
+  readReceipts ReadReceipt[]
+
+  deleted   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReadReceipt {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([chatId])
+  @@index([userId])
+}
+
+// 🆕 Модель для инвайтов/приглашений
+model Invite {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  chatId      String?
+  chat        Chat?      @relation("ChatInvites", fields: [chatId], references: [id], onDelete: Cascade)
+  
+  serverId    String?
+  server      Server?    @relation("ServerInvites", fields: [serverId], references: [id], onDelete: Cascade)
+  
+  createdBy   String
+  creator     User       @relation("InviteCreator", fields: [createdBy], references: [id])
+  
+  maxUses     Int?       // Максимальное количество использований (null = безлимит)
+  uses        Int        @default(0) // Текущее количество использований
+  expiresAt   DateTime?  // Дата истечения (null = никогда)
+  
+  isActive    Boolean    @default(true) // Активен ли инвайт
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([code])
+  @@index([chatId])
+  @@index([serverId])
+  @@index([createdBy])
+}
