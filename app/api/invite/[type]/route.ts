@@ -21,6 +21,7 @@ export async function GET(
 
     console.log("Looking for invite with code:", code);
 
+    // Ищем инвайт с включением и чата, и сервера
     const invite = await prisma.invite.findUnique({
       where: { code },
       include: {
@@ -28,6 +29,20 @@ export async function GET(
           include: {
             _count: {
               select: { members: true }
+            }
+          }
+        },
+        server: {
+          include: {
+            _count: {
+              select: { members: true }
+            },
+            chats: {
+              take: 1,
+              select: { 
+                id: true,
+                name: true  // Добавляем name
+              }
             }
           }
         }
@@ -38,35 +53,68 @@ export async function GET(
       return NextResponse.json({ error: "Invalid invite code" }, { status: 404 });
     }
 
-    if (!invite.chat) {
-      return NextResponse.json({ error: "Chat not found for this invite" }, { status: 404 });
-    }
-
+    // Проверка срока действия
     if (invite.expiresAt && invite.expiresAt < new Date()) {
       return NextResponse.json({ error: "Invite link has expired" }, { status: 410 });
     }
 
+    // Проверка лимита использований
     if (invite.maxUses && invite.uses >= invite.maxUses) {
       return NextResponse.json({ error: "Invite link has reached its usage limit" }, { status: 410 });
     }
 
-    return NextResponse.json({
-      chat: {
-        id: invite.chat.id,
-        name: invite.chat.name,
-        type: invite.chat.type,
-        imageUrl: invite.chat.imageUrl,
-        access: invite.chat.access,
-        inviteCode: invite.chat.inviteCode
-      },
-      invite: {
-        uses: invite.uses,
-        maxUses: invite.maxUses,
-        expiresAt: invite.expiresAt,
-        createdAt: invite.createdAt
-      },
-      memberCount: invite.chat._count.members
-    });
+    // Определяем тип инвайта (сервер или чат)
+    const isServerInvite = !!invite.serverId && invite.server;
+    
+    if (isServerInvite && invite.server) {
+      // Инвайт на сервер
+      const firstChat = invite.server.chats[0];
+      return NextResponse.json({
+        type: 'SERVER',
+        server: {
+          id: invite.server.id,
+          name: invite.server.name,
+          imageUrl: invite.server.imageUrl,
+          access: invite.server.access,
+          inviteCode: invite.server.inviteCode
+        },
+        chat: firstChat ? {
+          id: firstChat.id,
+          name: firstChat.name
+        } : null,
+        invite: {
+          uses: invite.uses,
+          maxUses: invite.maxUses,
+          expiresAt: invite.expiresAt,
+          createdAt: invite.createdAt
+        },
+        memberCount: invite.server._count.members
+      });
+    } 
+    
+    if (invite.chat) {
+      // Инвайт на чат
+      return NextResponse.json({
+        type: 'CHAT',
+        chat: {
+          id: invite.chat.id,
+          name: invite.chat.name,
+          type: invite.chat.type,
+          imageUrl: invite.chat.imageUrl,
+          access: invite.chat.access,
+          inviteCode: invite.chat.inviteCode
+        },
+        invite: {
+          uses: invite.uses,
+          maxUses: invite.maxUses,
+          expiresAt: invite.expiresAt,
+          createdAt: invite.createdAt
+        },
+        memberCount: invite.chat._count.members
+      });
+    }
+
+    return NextResponse.json({ error: "Invite target not found" }, { status: 404 });
   } catch (error) {
     console.error("Error fetching invite:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

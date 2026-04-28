@@ -146,7 +146,7 @@ export async function getUserSidebarData() {
   const allChats = await prisma.chat.findMany({
     where: {
       users: { some: { id: currentUser.id } },
-      serverId: null, // Только независимые чаты (не на серверах)
+      serverId: null,
     },
     include: {
       users: {
@@ -169,13 +169,25 @@ export async function getUserSidebarData() {
     orderBy: { updatedAt: "desc" }
   });
 
-  console.log("Found chats:", allChats.length);
-  allChats.forEach(chat => {
-    console.log(`Chat: ${chat.name || chat.id}, Type: ${chat.type}`);
-  });
+  // Подсчет непрочитанных сообщений для каждого чата
+  const chatsWithUnread = await Promise.all(
+    allChats.map(async (chat) => {
+      const unreadCount = await prisma.message.count({
+        where: {
+          chatId: chat.id,
+          userId: { not: currentUser.id },
+          readReceipts: {
+            none: { userId: currentUser.id }
+          }
+        }
+      });
+
+      return { ...chat, unreadCount };
+    })
+  );
 
   // Форматируем чаты
-  const formattedChats = allChats.map(chat => {
+  const formattedChats = chatsWithUnread.map(chat => {
     let displayTitle = chat.name;
     let displayImage = chat.imageUrl;
 
@@ -210,9 +222,6 @@ export async function getUserSidebarData() {
       };
     }
 
-    // Считаем непрочитанные сообщения
-    const unreadCount = 0; // TODO: реализовать подсчет
-
     return {
       id: chat.id,
       uiType: "CHAT",
@@ -220,13 +229,13 @@ export async function getUserSidebarData() {
       title: displayTitle,
       image: displayImage,
       lastMessage: lastMessageFormatted,
-      unreadCount,
+      unreadCount: chat.unreadCount, // Только непрочитанные
       updatedAt: chat.updatedAt,
       isTyping: false,
     };
   });
 
-  // Получаем серверы
+  // Получаем серверы с каналами и их непрочитанными
   const servers = await prisma.server.findMany({
     where: {
       members: { some: { id: currentUser.id } }
@@ -246,7 +255,36 @@ export async function getUserSidebarData() {
     }
   });
 
-  const formattedServers = servers.map(server => ({
+  // Подсчет непрочитанных для каналов серверов
+  const serversWithUnread = await Promise.all(
+    servers.map(async (server) => {
+      const chatsWithUnreadCounts = await Promise.all(
+        server.chats.map(async (chat) => {
+          const unreadCount = await prisma.message.count({
+            where: {
+              chatId: chat.id,
+              userId: { not: currentUser.id },
+              readReceipts: {
+                none: { userId: currentUser.id }
+              }
+            }
+          });
+
+          return {
+            ...chat,
+            unreadCount
+          };
+        })
+      );
+
+      return {
+        ...server,
+        chats: chatsWithUnreadCounts
+      };
+    })
+  );
+
+  const formattedServers = serversWithUnread.map(server => ({
     id: server.id,
     uiType: "SERVER",
     type: "SERVER",
@@ -258,15 +296,11 @@ export async function getUserSidebarData() {
       name: chat.name || `Канал ${chat.id.slice(0, 6)}`,
       type: chat.type,
       access: chat.access,
-      unreadCount: 0
+      unreadCount: chat.unreadCount
     }))
   }));
 
   const allItems = [...formattedChats, ...formattedServers];
-  
-  console.log("Total items:", allItems.length);
-  console.log("Chats count:", formattedChats.length);
-  console.log("Servers count:", formattedServers.length);
   
   return allItems.sort((a, b) => 
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -1126,6 +1160,7 @@ export async function sendMessage(
   content: string, 
   fileUrl?: string | null, 
   fileType?: string | null,
+  fileName?: string | null,
   replyToId?: string | null
 ) {
   const user = await getCurrentUser();
@@ -1149,10 +1184,23 @@ export async function sendMessage(
     }
   }
 
+  // Для файлов без текста добавляем стандартное описание
+  let finalContent = content;
+  let finalFileName = fileName;
+  
+  if (fileUrl && !content?.trim()) {
+    if (fileType === 'IMAGE') finalContent = "📷 Фото";
+    else if (fileType === 'VIDEO') finalContent = "🎥 Видео";
+    else if (fileType === 'AUDIO') finalContent = "🎤 Голосовое сообщение";
+    else if (fileType === 'ROUND') finalContent = "📹 Видеосообщение";
+    else finalContent = "📎 Файл";
+  }
+
   const message = await prisma.message.create({
     data: {
-      content,
+      content: finalContent,
       fileUrl: fileUrl || null,
+      fileName: finalFileName || null,
       fileType: fileType || null,
       userId: user.id,
       chatId: chatId,
@@ -1183,6 +1231,28 @@ export async function sendMessage(
   });
 
   await pusherServer.trigger(chatId, "new-message", message);
+
+  // Обновляем updatedAt чата
+  await prisma.chat.update({
+    where: { id: chatId },
+    data: { updatedAt: new Date() }
+  });
+
+  // Отправляем событие для обновления сайдбара
+  const chatMembers = await prisma.chatMember.findMany({
+    where: { chatId },
+    select: { userId: true }
+  });
+
+  for (const member of chatMembers) {
+    if (member.userId !== user.id) {
+      await pusherServer.trigger(`user-${member.userId}`, "unread-update", {
+        chatId,
+        timestamp: new Date()
+      });
+    }
+  }
+
   return message;
 }
 

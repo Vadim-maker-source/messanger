@@ -163,6 +163,7 @@ model Message {
   id        String   @id @default(cuid())
   content   String   @db.Text
   fileUrl   String?
+  fileName  String?
   fileType  String?
   reactions Json?
   forwardedFromMessageId String?

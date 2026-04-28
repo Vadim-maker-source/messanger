@@ -19,6 +19,8 @@ export async function uploadChatImage(formData: FormData) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const fileKey = `uploads/${Date.now()}-${randomBytes(4).toString('hex')}-${file.name}`;
 
+  const fileName = file.name.substring(0, file.name.lastIndexOf('.'));
+
   await s3Client.send(new PutObjectCommand({
     Bucket: process.env.YANDEX_BUCKET!,
     Key: fileKey,
@@ -26,5 +28,5 @@ export async function uploadChatImage(formData: FormData) {
     ContentType: file.type,
   }));
 
-  return `https://storage.yandexcloud.net/${process.env.YANDEX_BUCKET}/${fileKey}`;
+  return {url: `https://storage.yandexcloud.net/${process.env.YANDEX_BUCKET}/${fileKey}`, fileName};
 }

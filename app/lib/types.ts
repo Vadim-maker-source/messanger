@@ -12,6 +12,7 @@ export interface Message {
     id: string;
     content: string;
     fileUrl: string | null;
+    fileName: string | null;
     fileType: string | null;
     userId: string;
     chatId: string;

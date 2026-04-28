@@ -16,12 +16,12 @@ import { signOut } from "next-auth/react";
 
 const MIN_WIDTH = 80;
 const MAX_WIDTH = 700;
-const DEFAULT_WIDTH = 320;
+const DEFAULT_WIDTH = 470;
 
 interface ChatItem {
   id: string;
   title: string;
-  image?: string;
+  image?: string | null;
   uiType: string;
   type?: string;
   subtitle?: string;
@@ -409,14 +409,14 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                 {width > 100 && (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-white/90 truncate">
+                      <h3 className="text-lg font-semibold text-white/90 truncate">
                         {chat.title}
                       </h3>
                       
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         {chat.isPinned && <Pin size={10} className="text-white/30" />}
                         {chat.lastMessage && (
-                          <span className="text-[11px] text-white/30">
+                          <span className="text-[14px] text-white/30">
                             {formatTime(chat.lastMessage.createdAt)}
                           </span>
                         )}
@@ -429,7 +429,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                           <>
                             {getMessageIcon(chat.lastMessage)}
                             {getMessageStatusIcon(chat.lastMessage.status)}
-                            <p className="text-[13px] text-white/40 truncate">
+                            <p className="text-[16px] text-white/40 truncate">
                               {chat.lastMessage.senderId === user?.id && 'Вы: '}
                               {chat.lastMessage.isVoice && '🎤 Голосовое сообщение'}
                               {chat.lastMessage.isPhoto && '🖼️ Фото'}

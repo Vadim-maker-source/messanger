@@ -60,6 +60,7 @@ interface Message {
   id: string;
   content: string;
   fileUrl: string | null;
+  fileName: string | null;
   fileType: string | null;
   forwardedFromMessageId?: string | null;
   forwardedFromChatId?: string | null;
@@ -173,7 +174,7 @@ const ImageMessage = ({ url }: { url: string }) => {
       <motion.img 
         src={url} 
         alt="message" 
-        className="max-w-[300px] max-h-[300px] rounded-lg cursor-pointer object-cover hover:opacity-90 transition-opacity"
+        className="max-w-90 max-h-90 min-w-75 w-auto h-auto rounded-lg cursor-pointer object-cover hover:opacity-90 transition-opacity"
         onClick={() => setIsOpen(true)}
         whileHover={{ scale: 1.02 }}
         transition={{ duration: 0.2 }}
@@ -400,9 +401,12 @@ const RoundVideoMessage = ({ url }: { url: string }) => {
 };
 
 // Компонент для файлов
-const FileMessage = ({ url, name }: { url: string; name: string }) => {
+// Компонент для файлов
+// Компонент для файлов - упрощенная версия
+// Компонент для файлов
+const FileMessage = ({ fileUrl, fileName }: { fileUrl: string; fileName?: string | null }) => {
   const getFileIcon = () => {
-    const ext = name.split('.').pop()?.toLowerCase();
+    const ext = fileName?.split('.').pop()?.toLowerCase();
     if (['pdf'].includes(ext || '')) return "📄";
     if (['doc', 'docx'].includes(ext || '')) return "📝";
     if (['xls', 'xlsx'].includes(ext || '')) return "📊";
@@ -410,16 +414,18 @@ const FileMessage = ({ url, name }: { url: string; name: string }) => {
     return "📎";
   };
 
+  const displayName = fileName || "Файл";
+
   return (
     <a 
-      href={url} 
+      href={fileUrl} 
       target="_blank" 
       rel="noopener noreferrer"
       className="flex items-center gap-3 bg-white/10 rounded-lg p-3 hover:bg-white/20 transition-colors group min-w-[200px]"
     >
       <div className="text-2xl">{getFileIcon()}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{name}</p>
+        <p className="text-sm font-medium truncate">{displayName}</p>
         <p className="text-xs text-white/40">Скачать файл</p>
       </div>
       <Download size={16} className="text-white/40 group-hover:text-white transition-colors" />
@@ -624,6 +630,189 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
         </button>
       ))}
     </motion.div>
+  );
+};
+
+  const FileUploadModal = ({ 
+  isOpen, 
+  onClose, 
+  files, 
+  onRemoveFile,
+  caption,
+  onCaptionChange,
+  onUpload,
+  isUploading 
+}: { 
+  isOpen: boolean;
+  onClose: () => void;
+  files: File[];
+  onRemoveFile: (index: number) => void;
+  caption: string;
+  onCaptionChange: (value: string) => void;
+  onUpload: () => void;
+  isUploading: boolean;
+}) => {
+  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
+  
+  // Создаем превью для изображений при монтировании
+  useEffect(() => {
+    const urls: { [key: number]: string } = {};
+    files.forEach((file, index) => {
+      if (file.type.startsWith('image/')) {
+        urls[index] = URL.createObjectURL(file);
+      }
+    });
+    setPreviewUrls(urls);
+    
+    // Очищаем URL при размонтировании
+    return () => {
+      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [files]);
+  
+  // Форматирование размера файла
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+  
+  // Получение иконки для файла
+  const getFileIcon = (file: File) => {
+    if (file.type.startsWith('image/')) return null; // Для изображений показываем превью
+    if (file.type.startsWith('video/')) return "🎥";
+    if (file.type.startsWith('audio/')) return "🎵";
+    if (file.type.includes('pdf')) return "📄";
+    if (file.type.includes('word')) return "📝";
+    if (file.type.includes('excel')) return "📊";
+    return "📎";
+  };
+  
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/80 z-[400] flex items-center justify-center p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="bg-[#121214] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-white/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-white/10 bg-gradient-to-r from-violet-500/10 to-purple-500/10">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Paperclip size={20} className="text-violet-400" />
+                Загрузка файлов
+              </h3>
+              <p className="text-sm text-white/40 mt-1">
+                Выберите подпись для загружаемых файлов
+              </p>
+            </div>
+            
+            {/* Files Preview */}
+            <div className="p-5 max-h-[400px] overflow-y-auto custom-scrollbar">
+              <div className="space-y-2 mb-4">
+                <p className="text-xs text-white/40 uppercase tracking-wider mb-2">
+                  Выбрано файлов: {files.length}
+                </p>
+                {files.map((file, index) => (
+                  <motion.div
+                    key={`${file.name}-${file.size}-${file.lastModified}`}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.3) }}
+                    className="flex items-center gap-3 p-3 bg-white/5 rounded-xl group hover:bg-white/10 transition-colors"
+                  >
+                    {/* Preview для изображений */}
+                    {file.type.startsWith('image/') && previewUrls[index] ? (
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-black/30 flex-shrink-0">
+                        <img 
+                          src={previewUrls[index]} 
+                          alt="preview" 
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-2xl w-12 h-12 flex items-center justify-center flex-shrink-0">
+                        {getFileIcon(file)}
+                      </div>
+                    )}
+                    
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{file.name}</p>
+                      <p className="text-xs text-white/40">{formatFileSize(file.size)}</p>
+                    </div>
+                    
+                    <button
+                      onClick={() => onRemoveFile(index)}
+                      className="p-1.5 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={14} className="text-red-400" />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+              
+              {/* Caption Input */}
+              <div className="mt-4">
+                <label className="text-sm text-white/60 block mb-2">
+                  Подпись к файлам
+                  <span className="text-xs text-white/30 ml-2">(необязательно)</span>
+                </label>
+                <textarea
+                  value={caption}
+                  onChange={(e) => onCaptionChange(e.target.value)}
+                  placeholder="Напишите что-нибудь к этим файлам..."
+                  rows={3}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-violet-500 transition-colors resize-none placeholder:text-white/20"
+                  autoFocus
+                />
+                <p className="text-xs text-white/30 mt-2">
+                  {caption ? `${caption.length}/500 символов` : "Подпись будет отображаться как основное сообщение"}
+                </p>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="p-5 border-t border-white/10 flex gap-3">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={onUpload}
+                disabled={isUploading || files.length === 0}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Загрузка...
+                  </>
+                ) : (
+                  <>
+                    <Send size={18} />
+                    Отправить ({files.length})
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -890,6 +1079,20 @@ export default function RealTimeChat({
     return () => clearTimeout(timer);
   }, [chatId, isSearchOpen, searchQuery]);
 
+  useEffect(() => {
+  const markRead = async () => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.userId !== currentUser.id) {
+        await markMessagesAsRead(chatId, lastMessage.id);
+        // Отправляем событие для обновления сайдбара
+        await fetch('/api/sidebar/refresh', { method: 'POST' });
+      }
+    }
+  };
+  markRead();
+}, [messages]);
+
   // Отправка сообщения
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -937,52 +1140,36 @@ export default function RealTimeChat({
       setIsSending(false);
     }
   };
-  
-  // Обработка загрузки файлов
-  const handleFileUpload = async (file: File, fileType: string) => {
-    if (isChannel && !canWrite) {
-      alert("Только администратор может отправлять файлы в канал");
-      return;
-    }
-    
-    setIsSending(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const fileUrl = await uploadChatImage(formData);
-      const fileName = file.name || "Файл";
-      const sentMessage = await sendMessage(chatId, fileName, fileUrl, fileType, replyingTo?.id);
-      const formattedMessage = {
-        ...sentMessage,
-        reactions: sentMessage.reactions as { [key: string]: string[] } | null,
-        readReceipts: []
-      } as Message;
-      setMessages(prev => [...prev, formattedMessage]);
-      setReplyingTo(null);
-      setHasMarkedRead(false);
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      alert(error instanceof Error ? error.message : "Ошибка загрузки");
-    } finally {
-      setIsSending(false);
-      setShowMediaMenu(false);
-    }
-  };
 
   // Обработка выбора файлов
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
-    const files = Array.from(e.target.files || []);
-    files.forEach(file => {
-      let fileType = type;
-      if (type === 'MEDIA') {
-        if (file.type.startsWith('image/')) fileType = 'IMAGE';
-        else if (file.type.startsWith('video/')) fileType = 'VIDEO';
-        else fileType = 'FILE';
-      }
-      handleFileUpload(file, fileType);
-    });
-    e.target.value = '';
-  };
+  // Обработка выбора файлов через кнопку "скрепочка"
+const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  
+  if (isChannel && !canWrite) {
+    toast.error("Только администратор может отправлять файлы в канал");
+    return;
+  }
+  
+  // Открываем модальное окно для ввода подписи
+  setPendingFiles(prev => {
+    // Фильтруем дубликаты по имени и размеру
+    const newFiles = files.filter(file => 
+      !prev.some(existingFile => 
+        existingFile.name === file.name && 
+        existingFile.size === file.size &&
+        existingFile.lastModified === file.lastModified
+      )
+    );
+    return [...prev, ...newFiles];
+  });
+  setFileCaption("");
+  setShowFileUploadModal(true);
+  
+  // Очищаем input, чтобы можно было выбрать те же файлы снова
+  e.target.value = '';
+};
 
   const buildFileFromBlob = (blob: Blob, name: string, type: string): File => {
     if (typeof window !== 'undefined' && (window as any).File) {
@@ -996,59 +1183,77 @@ export default function RealTimeChat({
     }) as File;
   };
 
-  // Запись аудио
-  const startAudioRecording = async () => {
-    if (isChannel && !canWrite) {
-      alert("Только администратор может отправлять голосовые сообщения в канал");
-      return;
-    }
-    
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recordingStreamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-
-        const file = buildFileFromBlob(blob, `voice-${Date.now()}.webm`, 'audio/webm');
-
-        await handleFileUpload(file, 'AUDIO');
-        recordingStreamRef.current?.getTracks().forEach(track => track.stop());
-        recordingStreamRef.current = null;
-        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-        setRecordingTime(0);
-      };
-      
-      recorder.start();
-      setMediaRecorder(recorder);
-      setIsRecording(true);
-      setRecordingType('audio');
-      
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-      
-      setTimeout(() => {
-        if (recorder.state === 'recording') stopRecording();
-      }, 120000);
-      
-    } catch (error) {
-      console.error("Error starting audio recording:", error);
-      alert("Не удалось получить доступ к микрофону");
-    }
-  };
-
   // Запись видеокружочка
+const startAudioRecording = async () => {
+  if (isChannel && !canWrite) {
+    toast.error("Только администратор может отправлять голосовые сообщения в канал");
+    return;
+  }
+  
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordingStreamRef.current = stream;
+    const recorder = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const file = buildFileFromBlob(blob, `voice-${Date.now()}.webm`, 'audio/webm');
+      
+      // Голосовые отправляем без модалки
+      setIsSending(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const fileUrl = await uploadChatImage(formData);
+        const sentMessage = await sendMessage(chatId, "🎤 Голосовое сообщение", fileUrl?.url, 'AUDIO', null, replyingTo?.id);
+        const formattedMessage = {
+          ...sentMessage,
+          reactions: sentMessage.reactions as { [key: string]: string[] } | null,
+          readReceipts: []
+        } as Message;
+        setMessages(prev => [...prev, formattedMessage]);
+        setHasMarkedRead(false);
+      } catch (error) {
+        console.error("Error sending voice message:", error);
+        toast.error("Ошибка отправки голосового сообщения");
+      } finally {
+        setIsSending(false);
+      }
+      
+      recordingStreamRef.current?.getTracks().forEach(track => track.stop());
+      recordingStreamRef.current = null;
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      setRecordingTime(0);
+    };
+    
+    recorder.start();
+    setMediaRecorder(recorder);
+    setIsRecording(true);
+    setRecordingType('audio');
+    
+    recordingIntervalRef.current = setInterval(() => {
+      setRecordingTime(prev => prev + 1);
+    }, 1000);
+    
+    setTimeout(() => {
+      if (recorder.state === 'recording') stopRecording();
+    }, 120000);
+    
+  } catch (error) {
+    console.error("Error starting audio recording:", error);
+    toast.error("Не удалось получить доступ к микрофону");
+  }
+};
+
+// Запись видеокружочка (отправляется сразу)
 const startRoundVideoRecording = async () => {
   if (isChannel && !canWrite) {
-    alert("Только администратор может отправлять видеокружочки в канал");
+    toast.error("Только администратор может отправлять видеокружочки в канал");
     return;
   }
 
-  // Останавливаем предыдущие потоки, если есть
   if (recordingStreamRef.current) {
     recordingStreamRef.current.getTracks().forEach(track => track.stop());
     recordingStreamRef.current = null;
@@ -1057,17 +1262,13 @@ const startRoundVideoRecording = async () => {
     mediaRecorder.stop();
   }
 
-  console.log("=== Начинаем запись видеокружочка ===");
-  
-  // Проверяем поддержку API
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert("Ваш браузер не поддерживает доступ к камере");
+    toast.error("Ваш браузер не поддерживает доступ к камере");
     return;
   }
 
   let stream: MediaStream | null = null;
 
-  // Пробуем запросить видео + аудио
   try {
     const constraints = {
       video: {
@@ -1077,12 +1278,8 @@ const startRoundVideoRecording = async () => {
       },
       audio: true
     };
-    console.log("Запрашиваем с аудио:", constraints);
     stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log("✅ Поток получен (видео+аудио)");
   } catch (err) {
-    console.warn("Не удалось с аудио, пробуем только видео:", err);
-    // Пробуем только видео
     try {
       const constraints = {
         video: {
@@ -1092,29 +1289,10 @@ const startRoundVideoRecording = async () => {
         },
         audio: false
       };
-      console.log("Запрашиваем только видео:", constraints);
       stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("✅ Поток получен (только видео)");
     } catch (videoErr) {
-      console.error("Ошибка получения видео:", videoErr);
-      // Детальная диагностика
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        console.log("Доступные видеоустройства:", videoDevices);
-        if (videoDevices.length === 0) {
-          alert("❌ Камера не обнаружена. Подключите камеру и перезагрузите страницу.");
-        } else {
-          let errorMessage = "Неизвестная ошибка";
-          if (videoErr instanceof Error) errorMessage = videoErr.message;
-          else if (typeof videoErr === 'string') errorMessage = videoErr;
-          alert(`❌ Не удалось получить доступ к камере.\nОшибка: ${errorMessage}\n\nПроверьте, что камера не используется другим приложением, и разрешите доступ вручную.`);
-        }
-      } catch (e) {
-        let errorMessage = "Неизвестная ошибка";
-        if (videoErr instanceof Error) errorMessage = videoErr.message;
-        alert("❌ Ошибка доступа к камере: " + errorMessage);
-      }
+      console.error("Error getting camera:", videoErr);
+      toast.error("Не удалось получить доступ к камере");
       return;
     }
   }
@@ -1123,7 +1301,6 @@ const startRoundVideoRecording = async () => {
 
   recordingStreamRef.current = stream;
 
-  // Определяем поддерживаемый MIME-тип
   let mimeType = '';
   const codecs = [
     'video/webm',
@@ -1137,7 +1314,6 @@ const startRoundVideoRecording = async () => {
       break;
     }
   }
-  console.log("Выбран MIME-тип для записи:", mimeType || "дефолтный");
 
   const recorder = mimeType
     ? new MediaRecorder(stream, { mimeType })
@@ -1153,8 +1329,28 @@ const startRoundVideoRecording = async () => {
     const blobType = mimeType || 'video/webm';
     const blob = new Blob(chunks, { type: blobType });
     const file = buildFileFromBlob(blob, `round-${Date.now()}.webm`, blobType);
-    await handleFileUpload(file, 'ROUND');
-    // Останавливаем все треки
+    
+    // Видеокружочки отправляем сразу без модалки
+    setIsSending(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const fileUrl = await uploadChatImage(formData);
+      const sentMessage = await sendMessage(chatId, "📹 Видеосообщение", fileUrl?.url, 'ROUND', null, replyingTo?.id);
+      const formattedMessage = {
+        ...sentMessage,
+        reactions: sentMessage.reactions as { [key: string]: string[] } | null,
+        readReceipts: []
+      } as Message;
+      setMessages(prev => [...prev, formattedMessage]);
+      setHasMarkedRead(false);
+    } catch (error) {
+      console.error("Error sending round video:", error);
+      toast.error("Ошибка отправки видеокружочка");
+    } finally {
+      setIsSending(false);
+    }
+    
     if (recordingStreamRef.current) {
       recordingStreamRef.current.getTracks().forEach(track => track.stop());
       recordingStreamRef.current = null;
@@ -1164,12 +1360,11 @@ const startRoundVideoRecording = async () => {
   };
 
   recorder.onerror = (e) => {
-    console.error("Ошибка записи:", e);
-    alert("Ошибка при записи видеокружочка");
+    console.error("Recording error:", e);
+    toast.error("Ошибка при записи видеокружочка");
     stopRecording();
   };
 
-  // Начинаем запись с интервалом 1 секунда для получения чанков
   recorder.start(1000);
   setMediaRecorder(recorder);
   setIsRecording(true);
@@ -1179,7 +1374,6 @@ const startRoundVideoRecording = async () => {
     setRecordingTime(prev => prev + 1);
   }, 1000);
 
-  // Автоостановка через 60 секунд
   setTimeout(() => {
     if (recorder.state === 'recording') stopRecording();
   }, 60000);
@@ -1411,13 +1605,15 @@ const confirmDeleteMessage = async () => {
   };
 
   const renderMessageContent = (message: Message) => {
-    if (!message.fileUrl) {
-      return <p className="text-md wrap-break-word whitespace-pre-wrap">{message.content}</p>;
-    }
-
+  // Если есть файл
+  if (message.fileUrl) {
     switch (message.fileType) {
-      case 'IMAGE': 
-        return <ImageMessage url={message.fileUrl} />;
+      case 'IMAGE':
+        return <div>
+            <ImageMessage url={message.fileUrl} />
+            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
+          </div>
+          ;
       case 'VIDEO': 
         return <VideoMessage url={message.fileUrl} />;
       case 'AUDIO': 
@@ -1425,18 +1621,26 @@ const confirmDeleteMessage = async () => {
       case 'ROUND': 
         return <RoundVideoMessage url={message.fileUrl} />;
       case 'FILE': 
-        return <FileMessage url={message.fileUrl} name={message.content || "Файл"} />;
+        return <div>
+            <FileMessage fileUrl={message.fileUrl} fileName={message.fileName} />
+            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
+          </div>
+          ;
       default:
         return (
           <div>
             <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
               Скачать файл
             </a>
-            {message.content && <p className="text-sm wrap-break-word mt-1">{message.content}</p>}
+            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
           </div>
         );
     }
-  };
+  }
+  
+  // Если только текст
+  return <p className="text-md wrap-break-word whitespace-pre-wrap">{message.content}</p>;
+};
 
 // Инициализация Peer только на клиенте
 
@@ -1892,240 +2096,75 @@ const handleUploadFilesWithCaption = async () => {
   setIsUploadingFiles(true);
   let successCount = 0;
   
-  // Создаем локальную копию файлов, чтобы избежать дублирования
-  const filesToUpload = [...pendingFiles];
+  const currentCaption = fileCaption.trim();
   
   try {
-    for (const file of filesToUpload) {
+    for (const file of pendingFiles) {
       let fileType = 'FILE';
+      
       if (file.type.startsWith('image/')) {
         fileType = 'IMAGE';
       } else if (file.type.startsWith('video/')) {
         fileType = 'VIDEO';
+      } else {
+        fileType = 'FILE';
       }
       
       const formData = new FormData();
       formData.append("file", file);
       const fileUrl = await uploadChatImage(formData);
       
-      const messageContent = fileCaption.trim() || (fileType === 'IMAGE' ? "📷 Фото" : fileType === 'VIDEO' ? "🎥 Видео" : `📎 ${file.name}`);
+      if (!fileUrl) {
+        console.error("Failed to upload file:", file.name);
+        toast.error(`Не удалось загрузить файл: ${file.name}`);
+        continue;
+      }
       
-      const sentMessage = await sendMessage(chatId, messageContent, fileUrl, fileType, replyingTo?.id);
+      // Формируем текст сообщения
+      // Если есть подпись - используем её как основной текст
+      // Если нет - используем стандартное описание
+      let messageContent = "";
+      
+      if (currentCaption) {
+        messageContent = currentCaption;
+      } else {
+        if (fileType === 'IMAGE') {
+          messageContent = "📷 Фото";
+        } else if (fileType === 'VIDEO') {
+          messageContent = "🎥 Видео";
+        } else {
+          messageContent = `📎 ${file.name}`;
+        }
+      }
+      
+      // Отправляем ОДНО сообщение с файлом и текстом
+      const sentMessage = await sendMessage(chatId, messageContent, fileUrl.url, fileType, file.name, replyingTo?.id);
       const formattedMessage = {
         ...sentMessage,
         reactions: sentMessage.reactions as { [key: string]: string[] } | null,
         readReceipts: []
       } as Message;
       
-      setMessages(prev => {
-        // Проверяем, нет ли уже такого сообщения (по временной метке)
-        const exists = prev.some(msg => 
-          msg.content === messageContent && 
-          msg.fileUrl === fileUrl &&
-          Math.abs(new Date(msg.createdAt).getTime() - Date.now()) < 1000
-        );
-        if (exists) return prev;
-        return [...prev, formattedMessage];
-      });
-      
+      setMessages(prev => [...prev, formattedMessage]);
       successCount++;
       setHasMarkedRead(false);
     }
     
-    toast.success(`Загружено файлов: ${successCount}`);
-    setShowFileUploadModal(false);
-    setPendingFiles([]);
-    setFileCaption("");
+    if (successCount > 0) {
+      toast.success(`Загружено файлов: ${successCount}`);
+      setShowFileUploadModal(false);
+      setPendingFiles([]);
+      setFileCaption("");
+      setReplyingTo(null);
+    } else {
+      toast.error("Не удалось загрузить файлы");
+    }
   } catch (error) {
     console.error("Error uploading files:", error);
     toast.error("Ошибка при загрузке файлов");
   } finally {
     setIsUploadingFiles(false);
   }
-};
-
-// Компонент модального окна для загрузки файлов (ВНЕ основного компонента)
-const FileUploadModal = ({ 
-  isOpen, 
-  onClose, 
-  files, 
-  onRemoveFile,
-  caption,
-  onCaptionChange,
-  onUpload,
-  isUploading 
-}: { 
-  isOpen: boolean;
-  onClose: () => void;
-  files: File[];
-  onRemoveFile: (index: number) => void;
-  caption: string;
-  onCaptionChange: (value: string) => void;
-  onUpload: () => void;
-  isUploading: boolean;
-}) => {
-  const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
-  
-  // Создаем превью для изображений при монтировании
-  useEffect(() => {
-    const urls: { [key: number]: string } = {};
-    files.forEach((file, index) => {
-      if (file.type.startsWith('image/')) {
-        urls[index] = URL.createObjectURL(file);
-      }
-    });
-    setPreviewUrls(urls);
-    
-    // Очищаем URL при размонтировании
-    return () => {
-      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [files]);
-  
-  // Форматирование размера файла
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-  
-  // Получение иконки для файла
-  const getFileIcon = (file: File) => {
-    if (file.type.startsWith('image/')) return null; // Для изображений показываем превью
-    if (file.type.startsWith('video/')) return "🎥";
-    if (file.type.startsWith('audio/')) return "🎵";
-    if (file.type.includes('pdf')) return "📄";
-    if (file.type.includes('word')) return "📝";
-    if (file.type.includes('excel')) return "📊";
-    return "📎";
-  };
-  
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/80 z-[400] flex items-center justify-center p-4"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-[#121214] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-white/10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-5 border-b border-white/10 bg-gradient-to-r from-violet-500/10 to-purple-500/10">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Paperclip size={20} className="text-violet-400" />
-                Загрузка файлов
-              </h3>
-              <p className="text-sm text-white/40 mt-1">
-                Выберите подпись для загружаемых файлов
-              </p>
-            </div>
-            
-            {/* Files Preview */}
-            <div className="p-5 max-h-[400px] overflow-y-auto custom-scrollbar">
-              <div className="space-y-2 mb-4">
-                <p className="text-xs text-white/40 uppercase tracking-wider mb-2">
-                  Выбрано файлов: {files.length}
-                </p>
-                {files.map((file, index) => (
-                  <motion.div
-                    key={`${file.name}-${file.size}-${file.lastModified}`}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: Math.min(index * 0.05, 0.3) }}
-                    className="flex items-center gap-3 p-3 bg-white/5 rounded-xl group hover:bg-white/10 transition-colors"
-                  >
-                    {/* Preview для изображений */}
-                    {file.type.startsWith('image/') && previewUrls[index] ? (
-                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-black/30 flex-shrink-0">
-                        <img 
-                          src={previewUrls[index]} 
-                          alt="preview" 
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="text-2xl w-12 h-12 flex items-center justify-center flex-shrink-0">
-                        {getFileIcon(file)}
-                      </div>
-                    )}
-                    
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{file.name}</p>
-                      <p className="text-xs text-white/40">{formatFileSize(file.size)}</p>
-                    </div>
-                    
-                    <button
-                      onClick={() => onRemoveFile(index)}
-                      className="p-1.5 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 size={14} className="text-red-400" />
-                    </button>
-                  </motion.div>
-                ))}
-              </div>
-              
-              {/* Caption Input */}
-              <div className="mt-4">
-                <label className="text-sm text-white/60 block mb-2">
-                  Подпись к файлам
-                  <span className="text-xs text-white/30 ml-2">(необязательно)</span>
-                </label>
-                <textarea
-                  value={caption}
-                  onChange={(e) => onCaptionChange(e.target.value)}
-                  placeholder="Напишите что-нибудь к этим файлам..."
-                  rows={3}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-violet-500 transition-colors resize-none placeholder:text-white/20"
-                  autoFocus
-                />
-                <p className="text-xs text-white/30 mt-2">
-                  {caption ? `${caption.length}/500 символов` : "Подпись будет отображаться как основное сообщение"}
-                </p>
-              </div>
-            </div>
-            
-            {/* Actions */}
-            <div className="p-5 border-t border-white/10 flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={onUpload}
-                disabled={isUploading || files.length === 0}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Загрузка...
-                  </>
-                ) : (
-                  <>
-                    <Send size={18} />
-                    Отправить ({files.length})
-                  </>
-                )}
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
 };
 
   const MembersDialog = () => {
@@ -2333,11 +2372,6 @@ const FileUploadModal = ({
                 {chatType !== "PRIVATE" && (
                   <p className="text-xs text-white/40">
                     {chatType === "CHANNEL" ? "Канал" : "Группа"} • {initialMembersCount} {initialMembersCount === 1 ? "участник" : "участников"}
-                    {userRole && (
-                      <span className="ml-2 text-orange-400">
-                        • {userRole === 'CREATOR' ? 'Создатель' : userRole === 'ADMIN' ? 'Админ' : 'Участник'}
-                      </span>
-                    )}
                   </p>
                 )}
               </div>
@@ -2576,45 +2610,45 @@ const FileUploadModal = ({
                         className="absolute bottom-full left-0 mb-2 bg-[#121214] border border-white/10 rounded-xl p-2 shadow-2xl z-50 min-w-[180px]"
                       >
                         <div className="flex flex-col gap-1">
-                          <button 
-                            type="button" 
-                            onClick={() => imageInputRef.current?.click()} 
-                            className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-                          >
-                            <Image size={16} className="text-green-400" /> Фото
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => videoInputRef.current?.click()} 
-                            className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-                          >
-                            <Video size={16} className="text-blue-400" /> Видео
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => fileInputRef2.current?.click()} 
-                            className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-                          >
-                            <File size={16} className="text-yellow-400" /> Файл
-                          </button>
-                          <div className="h-px bg-white/10 my-1" />
-                          <button 
-                            type="button" 
-                            onClick={startAudioRecording} 
-                            disabled={isRecording}
-                            className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
-                          >
-                            <Mic size={16} className="text-purple-400" /> Голосовое
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={startRoundVideoRecording} 
-                            disabled={isRecording}
-                            className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
-                          >
-                            <Video size={16} className="text-orange-400" /> Видеокружочек
-                          </button>
-                        </div>
+  <button 
+    type="button" 
+    onClick={() => imageInputRef.current?.click()} 
+    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+  >
+    <Image size={16} className="text-green-400" /> Фото
+  </button>
+  <button 
+    type="button" 
+    onClick={() => videoInputRef.current?.click()} 
+    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+  >
+    <Video size={16} className="text-blue-400" /> Видео
+  </button>
+  <button 
+    type="button" 
+    onClick={() => fileInputRef2.current?.click()} 
+    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+  >
+    <File size={16} className="text-yellow-400" /> Файл
+  </button>
+  <div className="h-px bg-white/10 my-1" />
+  <button 
+    type="button" 
+    onClick={startAudioRecording} 
+    disabled={isRecording}
+    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+  >
+    <Mic size={16} className="text-purple-400" /> Голосовое
+  </button>
+  <button 
+    type="button" 
+    onClick={startRoundVideoRecording} 
+    disabled={isRecording}
+    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+  >
+    <Video size={16} className="text-orange-400" /> Видеокружочек
+  </button>
+</div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -2726,43 +2760,32 @@ const FileUploadModal = ({
           />
         )}
         <AnimatePresence>
-  {isCallModalOpen && (
-    <VideoCallModal 
-      peer={peer}
-      remotePeerId={remotePeerId}
-      incomingCall={incomingCall}
-      onClose={() => setIsCallModalOpen(false)}
-      currentUser={currentUser}
-      chatId={chatId}
-      sendMessage={sendMessage}
-    />
-  )}
 </AnimatePresence>
 <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-  <DialogContent className="bg-[#121214] border border-violet-500/20 text-white">
+  <DialogContent className="bg-[#121214] text-white w-full max-w-md sm:max-w-lg md:max-w-xl">
     <DialogHeader>
-      <DialogTitle className="text-violet-400 text-lg">
+      <DialogTitle className="text-white font-bold text-xl">
         Удалить сообщение?
       </DialogTitle>
     </DialogHeader>
 
-    <p className="text-sm text-white/60 text-lg">
+    <p className="text-white text-lg">
       Это действие нельзя отменить
     </p>
-
-      <button
-        onClick={confirmDeleteMessage}
-        className="px-4 py-2 rounded-xl hover:bg-[#e53935]/30 text-[#e53935] text-lg transition cursor-pointer duration-300"
-      >
-        Удалить
-      </button>
+    <div className="w-full flex items-center gap-2">
       <button
         onClick={() => setDeleteDialogOpen(false)}
-        className="px-4 py-2 rounded-xl hover:bg-violet-500/30 text-violet-500 text-lg transition cursor-pointer duration-300"
+        className="px-6 py-3 rounded-xl bg-violet-500/20 hover:bg-violet-500/60 text-white text-lg w-full transition cursor-pointer duration-300"
       >
         Отмена
       </button>
-
+      <button
+        onClick={confirmDeleteMessage}
+        className="px-6 py-3 rounded-xl bg-[#e53935]/20 hover:bg-[#e53935]/60 text-white text-lg w-full transition cursor-pointer duration-300"
+      >
+        Удалить
+      </button>
+    </div>
   </DialogContent>
 </Dialog>
 
@@ -2799,7 +2822,7 @@ const FileUploadModal = ({
   files={pendingFiles}
   onRemoveFile={handleRemoveFile}
   caption={fileCaption}
-  onCaptionChange={handleCaptionChange}
+  onCaptionChange={(value) => setFileCaption(value)}
   onUpload={handleUploadFilesWithCaption}
   isUploading={isUploadingFiles}
 />

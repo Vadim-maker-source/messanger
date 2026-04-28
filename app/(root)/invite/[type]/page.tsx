@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Users, Hash, Shield, Loader2, ArrowRight, XCircle, CheckCircle } from "lucide-react";
+import { Users, Hash, Shield, Server, Loader2, ArrowRight, XCircle, CheckCircle } from "lucide-react";
 import { joinByInvite } from "@/app/lib/api/invite";
 
 interface InvitePageProps {
@@ -13,8 +13,7 @@ interface InvitePageProps {
 }
 
 export default function InvitePage({ params }: InvitePageProps) {
-  // Разворачиваем params с помощью React.use()
-  const { type } = use(params);
+  const { type: code } = use(params);
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
@@ -24,11 +23,11 @@ export default function InvitePage({ params }: InvitePageProps) {
 
   useEffect(() => {
     fetchInviteInfo();
-  }, [type]);
+  }, [code]);
 
   const fetchInviteInfo = async () => {
     try {
-      const res = await fetch(`/api/invite/${type}`);
+      const res = await fetch(`/api/invite/${code}`);
       const data = await res.json();
       if (res.ok) {
         setInviteInfo(data);
@@ -44,12 +43,18 @@ export default function InvitePage({ params }: InvitePageProps) {
     setLoading(true);
     setError(null);
     try {
-      const result = await joinByInvite(type);
-      if (result.chat) {
+      const result = await joinByInvite(code);
+      if (result.chat || result.server) {
         setSuccess(true);
-        setTimeout(() => {
-          router.push(`/chat/${result.chat.id}`);
-        }, 1500);
+        if (result.chat) {
+          setTimeout(() => {
+            router.push(`/chat/${result.chat.id}`);
+          }, 1500);
+        } else if (result.server && result.chat) {
+          setTimeout(() => {
+            router.push(`/chat/${result.chat.id}`);
+          }, 1500);
+        }
       }
     } catch (err: any) {
       setError(err.message || "Failed to join");
@@ -95,7 +100,7 @@ export default function InvitePage({ params }: InvitePageProps) {
           </div>
           <h2 className="text-2xl font-bold mb-2">Добро пожаловать!</h2>
           <p className="text-white/60 text-sm mb-6">
-            Вы успешно присоединились к {inviteInfo?.chat?.type === 'SERVER' ? 'серверу' : 'чату'}
+            Вы успешно присоединились к {inviteInfo?.type === 'SERVER' ? 'серверу' : 'чату'}
           </p>
           <div className="flex items-center justify-center gap-2 text-violet-400">
             <Loader2 size={16} className="animate-spin" />
@@ -114,29 +119,24 @@ export default function InvitePage({ params }: InvitePageProps) {
     );
   }
 
-  const getChatIcon = () => {
-    switch (inviteInfo.chat.type) {
-      case 'SERVER':
-        return <Shield size={24} />;
-      case 'GROUP':
-        return <Users size={24} />;
-      case 'CHANNEL':
-        return <Hash size={24} />;
-      default:
-        return <Users size={24} />;
+  const isServer = inviteInfo.type === 'SERVER';
+  const target = isServer ? inviteInfo.server : inviteInfo.chat;
+
+  const getIcon = () => {
+    if (isServer) return <Server size={24} />;
+    switch (target?.type) {
+      case 'GROUP': return <Users size={24} />;
+      case 'CHANNEL': return <Hash size={24} />;
+      default: return <Users size={24} />;
     }
   };
 
-  const getChatTypeName = () => {
-    switch (inviteInfo.chat.type) {
-      case 'SERVER':
-        return 'Сервер';
-      case 'GROUP':
-        return 'Группа';
-      case 'CHANNEL':
-        return 'Канал';
-      default:
-        return 'Чат';
+  const getTypeName = () => {
+    if (isServer) return 'Сервер';
+    switch (target?.type) {
+      case 'GROUP': return 'Группа';
+      case 'CHANNEL': return 'Канал';
+      default: return 'Чат';
     }
   };
 
@@ -150,10 +150,10 @@ export default function InvitePage({ params }: InvitePageProps) {
         <div className="relative h-32 bg-gradient-to-r from-violet-600/20 to-purple-600/20">
           <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2">
             <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white shadow-2xl border-4 border-[#121214]">
-              {inviteInfo.chat.imageUrl ? (
-                <img src={inviteInfo.chat.imageUrl} className="w-full h-full object-cover rounded-2xl" />
+              {target?.imageUrl ? (
+                <img src={target.imageUrl} className="w-full h-full object-cover rounded-2xl" />
               ) : (
-                <span className="text-4xl font-bold">{inviteInfo.chat.name?.[0]?.toUpperCase()}</span>
+                <span className="text-4xl font-bold">{target?.name?.[0]?.toUpperCase()}</span>
               )}
             </div>
           </div>
@@ -161,13 +161,13 @@ export default function InvitePage({ params }: InvitePageProps) {
 
         <div className="pt-14 pb-8 px-6 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
-            {getChatIcon()}
+            {getIcon()}
             <span className="text-xs font-medium text-violet-400 uppercase tracking-wider">
-              {getChatTypeName()}
+              {getTypeName()}
             </span>
           </div>
           
-          <h2 className="text-2xl font-bold mb-2">{inviteInfo.chat.name}</h2>
+          <h2 className="text-2xl font-bold mb-2">{target?.name}</h2>
           
           <div className="flex items-center justify-center gap-4 text-xs text-white/40 mb-6">
             <div className="flex items-center gap-1">
