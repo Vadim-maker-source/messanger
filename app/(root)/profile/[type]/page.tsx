@@ -278,7 +278,7 @@ export default function UserProfilePage() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Profile Header */}
         <div className="bg-gradient-to-br from-orange-500/10 to-violet-500/10 rounded-3xl p-8 mb-8">
-          <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
+          <div className="flex flex-col gap-8 items-center">
             {/* Avatar */}
             <div className="relative">
               <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden bg-gradient-to-br from-orange-500/20 to-violet-500/20">
@@ -291,39 +291,27 @@ export default function UserProfilePage() {
                 )}
               </div>
               <div className="absolute bottom-2 right-2">
-                <div className={`w-4 h-4 rounded-full border-2 border-[#0a0a0c] ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+                <div className={`w-6 h-6 rounded-full border-2 border-[#0a0a0c] ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
               </div>
             </div>
 
             {/* User Info */}
-            <div className="flex-1 text-center md:text-left">
+            <div className="flex flex-col text-center md:text-left items-center">
               <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
                 <h1 className="text-3xl md:text-4xl font-bold">{user.displayName || user.username}</h1>
                 {isOwnProfile && (
                   <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-full text-xs">Это вы</span>
                 )}
               </div>
-              <p className="text-white/40 mt-1">@{user.username}</p>
               
               <div className="flex items-center justify-center md:justify-start gap-4 mt-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
-                  <span className="text-sm text-white/60">{getStatusText()}</span>
-                </div>
                 {!isOnline && user.lastSeen && (
                   <div className="flex items-center gap-2">
-                    <Clock size={14} className="text-white/40" />
                     <span className="text-sm text-white/40">
-                      был(а) {getFormattedLastSeen(user.id)}
+                      {getFormattedLastSeen(user.id)}
                     </span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
-                  <Calendar size={14} className="text-white/40" />
-                  <span className="text-sm text-white/40">
-                    с {formatDate(user.createdAt)}
-                  </span>
-                </div>
               </div>
 
               {!isOwnProfile && (
@@ -335,45 +323,11 @@ export default function UserProfilePage() {
                     <MessageSquare size={18} />
                     Написать сообщение
                   </button>
-                  <button
-                    onClick={handleExportHistory}
-                    disabled={isExporting}
-                    className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <Download size={18} />
-                    {isExporting ? "Выгрузка..." : "Выгрузить историю"}
-                  </button>
                 </div>
               )}
             </div>
           </div>
         </div>
-
-        {/* Stats Cards */}
-        {user.stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white/5 rounded-2xl p-4 text-center hover:bg-white/10 transition-colors">
-              <MessageSquare size={20} className="text-orange-400 mx-auto mb-2" />
-              <div className="text-2xl font-bold">{user.stats.messagesCount}</div>
-              <div className="text-xs text-white/40">сообщений</div>
-            </div>
-            <div className="bg-white/5 rounded-2xl p-4 text-center hover:bg-white/10 transition-colors">
-              <Users size={20} className="text-blue-400 mx-auto mb-2" />
-              <div className="text-2xl font-bold">{user.stats.chatsCount}</div>
-              <div className="text-xs text-white/40">чатов</div>
-            </div>
-            <div className="bg-white/5 rounded-2xl p-4 text-center hover:bg-white/10 transition-colors">
-              <Hash size={20} className="text-green-400 mx-auto mb-2" />
-              <div className="text-2xl font-bold">{user.stats.serversCount}</div>
-              <div className="text-xs text-white/40">серверов</div>
-            </div>
-            <div className="bg-white/5 rounded-2xl p-4 text-center hover:bg-white/10 transition-colors">
-              <TrendingUp size={20} className="text-purple-400 mx-auto mb-2" />
-              <div className="text-2xl font-bold">{user.stats.reactionsCount}</div>
-              <div className="text-xs text-white/40">реакций</div>
-            </div>
-          </div>
-        )}
 
         {/* Tabs */}
         <div className="flex gap-2 border-b border-white/10 mb-6">

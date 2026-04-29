@@ -499,7 +499,7 @@ const ReadStatusIndicator = ({
 };
 
 // Компонент контекстного меню
-const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy }: any) => {
+const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy, onSelect }: any) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -592,6 +592,16 @@ const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply,
             Удалить
           </button>
         )}
+        <button
+  onClick={() => { 
+    onSelect(); 
+    onClose(); 
+  }}
+  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
+>
+  <Check size={16} className="text-violet-400" />
+  Выбрать
+</button>
       </div>
     </motion.div>
   );
@@ -1604,6 +1614,108 @@ const confirmDeleteMessage = async () => {
     );
   };
 
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+const [isSelectionMode, setIsSelectionMode] = useState(false);
+const [forwardingMessages, setForwardingMessages] = useState<string[]>([]);
+
+// Функция для выбора/снятия выбора сообщения
+const toggleSelectMessage = (messageId: string, e?: React.MouseEvent) => {
+  if (e) {
+    e.stopPropagation();
+  }
+  
+  const newSelected = new Set(selectedMessages);
+  if (newSelected.has(messageId)) {
+    newSelected.delete(messageId);
+  } else {
+    newSelected.add(messageId);
+  }
+  setSelectedMessages(newSelected);
+  
+  if (newSelected.size === 0) {
+    setIsSelectionMode(false);
+  }
+};
+
+// Вход в режим выбора (выделение одного сообщения)
+const enterSelectionMode = (messageId: string) => {
+  setSelectedMessages(new Set([messageId]));
+  setIsSelectionMode(true);
+};
+
+// Выделить все сообщения
+const selectAllMessages = () => {
+  const allIds = new Set(messages.map(m => m.id));
+  setSelectedMessages(allIds);
+  setIsSelectionMode(true);
+};
+
+// Выход из режима выбора
+const exitSelectionMode = () => {
+  setSelectedMessages(new Set());
+  setIsSelectionMode(false);
+};
+
+// Групповая пересылка выбранных сообщений
+const forwardSelectedMessages = async () => {
+  if (selectedMessages.size === 0) {
+    toast.error("Выберите хотя бы одно сообщение");
+    return;
+  }
+  
+  // Сохраняем выбранные сообщения для пересылки
+  setForwardingMessages(Array.from(selectedMessages));
+  setSelectedForwardChatIds([]);
+  setShowForwardDialog(true);
+};
+
+// Групповое удаление выбранных сообщений
+const deleteSelectedMessages = async () => {
+  if (selectedMessages.size === 0) {
+    toast.error("Выберите хотя бы одно сообщение");
+    return;
+  }
+  
+  const confirmMessage = `Удалить ${selectedMessages.size} сообщение${selectedMessages.size === 1 ? '' : 'ий'}?`;
+  if (!confirm(confirmMessage)) return;
+  
+  let successCount = 0;
+  let failCount = 0;
+  
+  for (const messageId of selectedMessages) {
+    try {
+      const message = messages.find(m => m.id === messageId);
+      if (!message) continue;
+      
+      const canDelete = message.userId === currentUser.id || 
+                        userRole === 'CREATOR' || 
+                        userRole === 'ADMIN' || 
+                        currentUser.isIdAdmin;
+      
+      if (!canDelete) {
+        failCount++;
+        continue;
+      }
+      
+      await deleteMessage(messageId);
+      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+      successCount++;
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      failCount++;
+    }
+  }
+  
+  if (successCount > 0) {
+    toast.success(`Удалено сообщений: ${successCount}`);
+  }
+  if (failCount > 0) {
+    toast.error(`Не удалось удалить: ${failCount}`);
+  }
+  
+  exitSelectionMode();
+};
+
   const renderMessageContent = (message: Message) => {
   // Если есть файл
   if (message.fileUrl) {
@@ -1673,9 +1785,9 @@ const joinCall = (incomingPeerId: string) => {
 
 const renderMessage = (message: Message) => {
   const isOwn = message.userId === currentUser.id;
+  const isSelected = selectedMessages.has(message.id);
   const displayName = isOwn ? "Вы" : (message.user.displayName || message.user.username);
   
-  // 1. Попытка извлечь peerId из контента сообщения
   const callMatch = message.content?.match(/peerId=([a-zA-Z0-9-_]+)/);
   const incomingPeerId = callMatch ? callMatch[1] : null;
 
@@ -1685,17 +1797,38 @@ const renderMessage = (message: Message) => {
       id={`message-${message.id}`}
       initial={{ opacity: 0, y: 15 }} 
       animate={{ opacity: 1, y: 0 }}
-      className={`flex gap-3 ${isOwn ? "justify-end" : "justify-start"} relative group mb-4 transition-colors duration-300`}
+      className={`flex gap-2 group mb-4 transition-colors duration-200 ${isOwn ? 'justify-end' : 'justify-start'} ${
+        isSelected ? 'bg-violet-500/10 rounded-xl -mx-2 px-2' : ''
+      } ${isSelectionMode ? 'cursor-pointer hover:bg-white/5 rounded-xl -mx-2 px-2' : ''}`}
+      onClick={isSelectionMode ? (e) => toggleSelectMessage(message.id, e) : undefined}
       onContextMenu={(e) => {
-        e.preventDefault();
-        setContextMenu({
-          x: e.clientX,
-          y: e.clientY,
-          message
-        });
+        if (!isSelectionMode) {
+          e.preventDefault();
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            message
+          });
+        }
       }}
     >
-      {/* Аватарка собеседника */}
+      {/* Чекбокс для выбора - показываем только в режиме выбора */}
+      {isSelectionMode && (
+        <div className={`flex items-start pt-3 ${isOwn ? 'order-1' : 'order-0'}`}>
+          <button
+            onClick={(e) => toggleSelectMessage(message.id, e)}
+            className={`w-5 h-5 rounded-full border-2 transition-all flex items-center justify-center shrink-0 mt-1 ${
+              isSelected 
+                ? 'bg-violet-500 border-violet-500' 
+                : 'border-white/40 hover:border-violet-400'
+            }`}
+          >
+            {isSelected && <Check size={12} className="text-white" />}
+          </button>
+        </div>
+      )}
+      
+      {/* Аватарка собеседника (только для не-своих сообщений) */}
       {!isOwn && (
         <div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center text-md font-bold shrink-0 overflow-hidden border border-white/5">
           {message.user.avatarUrl ? (
@@ -1706,7 +1839,10 @@ const renderMessage = (message: Message) => {
         </div>
       )}
       
-      <div className="max-w-[75%] relative">
+      {/* Пустой блок для отступа у своих сообщений (чтобы аватарка не смещалась) */}
+      {isOwn && <div className="w-10 shrink-0" />}
+      
+      <div className={`max-w-[70%] relative ${isOwn ? 'order-2' : 'order-1'}`}>
         {/* Превью ответа (если есть) */}
         {renderReplyPreview(message)}
         
@@ -1718,8 +1854,9 @@ const renderMessage = (message: Message) => {
           {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
               border-t-[15px] border-t-[#664471] 
               border-r-[15px] border-r-transparent">
-  </div>}
-          {/* Имя отправителя в групповых чатах */}
+          </div>}
+          
+          {/* Имя отправителя в групповых чатах (для не-своих сообщений) */}
           {!isOwn && chatType !== "PRIVATE" && (
             <p className="text-[11px] text-orange-400 mb-1 font-semibold uppercase tracking-wider">
               {displayName}
@@ -1775,14 +1912,14 @@ const renderMessage = (message: Message) => {
           </div>
         </div>
         
-        {/* Блок реакций с исправленными уникальными ключами */}
+        {/* Блок реакций */}
         {message.reactions && Object.entries(message.reactions).length > 0 && (
-          <div className="flex gap-1 mt-1.5 ml-1 flex-wrap">
+          <div className={`flex gap-1 mt-1.5 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
             {Object.entries(message.reactions).map(([reaction, users]) => {
               const hasUserReaction = users.includes(currentUser.id);
               return (
                 <button 
-                  key={`${message.id}-${reaction}`} // Гарантирует отсутствие варнингов React
+                  key={`${message.id}-${reaction}`}
                   onClick={() => handleAddReaction(message.id, reaction)}
                   className={`text-[11px] px-2 py-0.5 rounded-full transition-all flex items-center gap-1.5 border ${
                     hasUserReaction 
@@ -1798,9 +1935,9 @@ const renderMessage = (message: Message) => {
           </div>
         )}
         
-        {/* Пикер эмодзи (если открыт для этого сообщения) */}
+        {/* Пикер эмодзи */}
         {showEmojiPicker === message.id && (
-          <div className="absolute bottom-full mb-2 left-0 z-50 animate-in fade-in zoom-in duration-200">
+          <div className={`absolute bottom-full mb-2 z-50 animate-in fade-in zoom-in duration-200 ${isOwn ? 'right-0' : 'left-0'}`}>
             <ReactionPicker
               onSelect={(reaction) => {
                 handleAddReaction(message.id, reaction);
@@ -1814,6 +1951,17 @@ const renderMessage = (message: Message) => {
     </motion.div>
   );
 };
+
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && isSelectionMode) {
+      exitSelectionMode();
+    }
+  };
+  
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, [isSelectionMode]);
 
   const loadAvailableChats = async () => {
   setIsLoadingChats(true);
@@ -1835,7 +1983,6 @@ const renderMessage = (message: Message) => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isSearchingLocal, setIsSearchingLocal] = useState(false);
 
-  // Debounce для поиска - задержка 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -1843,17 +1990,14 @@ const renderMessage = (message: Message) => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Фильтрация чатов с debounce
   const filteredChats = useMemo(() => {
     if (!availableChats.length) return [];
     if (!debouncedSearchTerm) return availableChats;
-    
     return availableChats.filter(chat => 
       chat.title?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     );
   }, [availableChats, debouncedSearchTerm]);
 
-  // Эффект для показа индикатора загрузки при поиске
   useEffect(() => {
     if (searchTerm !== debouncedSearchTerm) {
       setIsSearchingLocal(true);
@@ -1861,6 +2005,53 @@ const renderMessage = (message: Message) => {
       setIsSearchingLocal(false);
     }
   }, [searchTerm, debouncedSearchTerm]);
+
+  const handleForwardSelected = async () => {
+    if (selectedForwardChatIds.length === 0) {
+      toast.error("Выберите хотя бы один чат");
+      return;
+    }
+
+    setIsSending(true);
+    let successCount = 0;
+    let failCount = 0;
+    const messagesToForward = forwardingMessages.length > 0 ? forwardingMessages : Array.from(selectedMessages);
+    
+    try {
+      for (const targetChatId of selectedForwardChatIds) {
+        try {
+          const canWriteInTarget = await checkCanWriteInChat(targetChatId, currentUser.id);
+          if (!canWriteInTarget) {
+            failCount++;
+            continue;
+          }
+          
+          for (const messageId of messagesToForward) {
+            await forwardMessage(messageId, targetChatId);
+          }
+          successCount++;
+        } catch (error) {
+          console.error(`Error forwarding to ${targetChatId}:`, error);
+          failCount++;
+        }
+      }
+      
+      if (successCount > 0) {
+        toast.success(`Переслано в ${successCount} чат${successCount === 1 ? '' : 'ов'}`);
+        setShowForwardDialog(false);
+        exitSelectionMode();
+        setForwardingMessages([]);
+        setSelectedForwardChatIds([]);
+      } else {
+        toast.error("Не удалось переслать сообщения");
+      }
+    } catch (error) {
+      console.error("Error forwarding messages:", error);
+      toast.error("Ошибка при пересылке");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   return (
     <motion.div
@@ -1878,9 +2069,9 @@ const renderMessage = (message: Message) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-white/10">
-          <h3 className="text-lg font-semibold text-white">Переслать сообщение</h3>
-          <p className="text-sm text-white/40 mt-1 truncate">
-            {forwardingMessage?.content?.substring(0, 50) || "[Медиа]"}
+          <h3 className="text-lg font-semibold text-white">Переслать сообщения</h3>
+          <p className="text-sm text-white/40 mt-1">
+            Выбрано сообщений: {forwardingMessages.length || selectedMessages.size}
           </p>
         </div>
         
@@ -1982,7 +2173,7 @@ const renderMessage = (message: Message) => {
             Отмена
           </button>
           <button
-            onClick={handleForwardMessage}
+            onClick={handleForwardSelected}
             disabled={selectedForwardChatIds.length === 0}
             className="flex-1 px-4 py-2 bg-violet-500 hover:bg-violet-600 rounded-xl text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
@@ -2589,127 +2780,150 @@ const handleUploadFilesWithCaption = async () => {
         </AnimatePresence>
 
         {/* Input */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/35 backdrop-blur-sm">
-          <div className="flex gap-2 items-center">
-            {!isChannel || (isChannel && canWrite) ? (
-              <>
-                <div className="relative">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowMediaMenu(!showMediaMenu)} 
-                    className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                  >
-                    <Paperclip size={20} className="text-white/60" />
-                  </button>
-                  <AnimatePresence>
-                    {showMediaMenu && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute bottom-full left-0 mb-2 bg-[#121214] border border-white/10 rounded-xl p-2 shadow-2xl z-50 min-w-[180px]"
-                      >
-                        <div className="flex flex-col gap-1">
-  <button 
-    type="button" 
-    onClick={() => imageInputRef.current?.click()} 
-    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-  >
-    <Image size={16} className="text-green-400" /> Фото
-  </button>
-  <button 
-    type="button" 
-    onClick={() => videoInputRef.current?.click()} 
-    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-  >
-    <Video size={16} className="text-blue-400" /> Видео
-  </button>
-  <button 
-    type="button" 
-    onClick={() => fileInputRef2.current?.click()} 
-    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
-  >
-    <File size={16} className="text-yellow-400" /> Файл
-  </button>
-  <div className="h-px bg-white/10 my-1" />
-  <button 
-    type="button" 
-    onClick={startAudioRecording} 
-    disabled={isRecording}
-    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
-  >
-    <Mic size={16} className="text-purple-400" /> Голосовое
-  </button>
-  <button 
-    type="button" 
-    onClick={startRoundVideoRecording} 
-    disabled={isRecording}
-    className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
-  >
-    <Video size={16} className="text-orange-400" /> Видеокружочек
-  </button>
-</div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <input 
-                  ref={inputRef}
-                  type="text" 
-                  value={newMessage} 
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder={isRecording ? "Идет запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
-                  disabled={isSending || isRecording} 
-                  className="flex-1 bg-white/5 rounded-xl px-4 py-2 text-white outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" 
-                />
-                
-                {/* Скрытые input для файлов */}
-                <input 
-                  ref={imageInputRef}
-                  type="file" 
-                  accept="image/*" 
-                  multiple 
-                  className="hidden" 
-                  onChange={(e) => handleFileSelect(e, 'IMAGE')}
-                />
-                <input 
-                  ref={videoInputRef}
-                  type="file" 
-                  accept="video/*" 
-                  multiple 
-                  className="hidden" 
-                  onChange={(e) => handleFileSelect(e, 'VIDEO')}
-                />
-                <input 
-                  ref={fileInputRef2}
-                  type="file" 
-                  className="hidden" 
-                  onChange={(e) => handleFileSelect(e, 'FILE')}
-                />
-              </>
-            ) : (
-              <div className="flex-1 text-center text-white/40 text-sm py-2">
-                ⚡ Только администраторы могут писать в этот канал
-              </div>
-            )}
-            
+        {/* Input - показываем только если не в режиме выбора */}
+{!isSelectionMode ? (
+  <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/35 backdrop-blur-sm">
+    <div className="flex gap-2 items-center">
+      {!isChannel || (isChannel && canWrite) ? (
+        <>
+          <div className="relative">
             <button 
-              type="submit" 
-              disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite)}
-              className="bg-orange-500 text-black p-2 rounded-xl hover:bg-orange-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button" 
+              onClick={() => setShowMediaMenu(!showMediaMenu)} 
+              className="p-2 hover:bg-white/5 rounded-xl transition-colors"
             >
-              {isSending ? (
-                <Loader2 className="animate-spin h-5 w-5" />
-              ) : (
-                <Send size={20} />
-              )}
+              <Paperclip size={20} className="text-white/60" />
             </button>
+            <AnimatePresence>
+              {showMediaMenu && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute bottom-full left-0 mb-2 bg-[#121214] border border-white/10 rounded-xl p-2 shadow-2xl z-50 min-w-[180px]"
+                >
+                  <div className="flex flex-col gap-1">
+                    <button 
+                      type="button" 
+                      onClick={() => imageInputRef.current?.click()} 
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                    >
+                      <Image size={16} className="text-green-400" /> Фото
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => videoInputRef.current?.click()} 
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                    >
+                      <Video size={16} className="text-blue-400" /> Видео
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => fileInputRef2.current?.click()} 
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                    >
+                      <File size={16} className="text-yellow-400" /> Файл
+                    </button>
+                    <div className="h-px bg-white/10 my-1" />
+                    <button 
+                      type="button" 
+                      onClick={startAudioRecording} 
+                      disabled={isRecording}
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+                    >
+                      <Mic size={16} className="text-purple-400" /> Голосовое
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={startRoundVideoRecording} 
+                      disabled={isRecording}
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+                    >
+                      <Video size={16} className="text-orange-400" /> Видеокружочек
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-        </form>
-      </div>
 
-      {/* Dialogs */}
+          <input 
+            ref={inputRef}
+            type="text" 
+            value={newMessage} 
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder={isRecording ? "Идет запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
+            disabled={isSending || isRecording} 
+            className="flex-1 bg-white/5 rounded-xl px-4 py-2 text-white outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" 
+          />
+          
+          <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'IMAGE')} />
+          <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'VIDEO')} />
+          <input ref={fileInputRef2} type="file" className="hidden" onChange={(e) => handleFileSelect(e, 'FILE')} />
+        </>
+      ) : (
+        <div className="flex-1 text-center text-white/40 text-sm py-2">
+          ⚡ Только администраторы могут писать в этот канал
+        </div>
+      )}
+      
+      <button 
+        type="submit" 
+        disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite)}
+        className="bg-orange-500 text-black p-2 rounded-xl hover:bg-orange-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isSending ? (
+          <Loader2 className="animate-spin h-5 w-5" />
+        ) : (
+          <Send size={20} />
+        )}
+      </button>
+    </div>
+  </form>
+) : (
+  <div className="p-4 border-t border-white/10 bg-violet-500/10 backdrop-blur-sm">
+    <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center gap-3 bg-black/30 rounded-xl px-4 py-2">
+        <span className="text-sm text-white/60">Выбрано:</span>
+        <span className="text-lg font-bold text-violet-400">{selectedMessages.size}</span>
+      </div>
+      
+      <div className="w-px h-8 bg-white/20" />
+      
+      <button
+        onClick={selectAllMessages}
+        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-sm transition-colors flex items-center gap-2"
+      >
+        <Check size={16} />
+        Выбрать все
+      </button>
+      
+      <button
+        onClick={forwardSelectedMessages}
+        className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 rounded-xl text-green-400 text-sm transition-colors flex items-center gap-2"
+      >
+        <Forward size={16} />
+        Переслать
+      </button>
+      
+      <button
+        onClick={deleteSelectedMessages}
+        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-xl text-red-400 text-sm transition-colors flex items-center gap-2"
+      >
+        <Trash2 size={16} />
+        Удалить
+      </button>
+      
+      <button
+        onClick={exitSelectionMode}
+        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-sm transition-colors"
+      >
+        Отмена
+      </button>
+    </div>
+  </div>
+)}
+</div>
       <AnimatePresence>
         {showForwardDialog && <ForwardDialog />}
       </AnimatePresence>
@@ -2720,45 +2934,46 @@ const handleUploadFilesWithCaption = async () => {
       {/* Context Menu */}
       <AnimatePresence>
         {contextMenu && (
-          <MessageContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            message={contextMenu.message}
-            isOwn={contextMenu.message.userId === currentUser.id}
-            canDelete={contextMenu.message.userId === currentUser.id || userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin}
-            onClose={() => setContextMenu(null)}
-            onReply={() => {
-              setReplyingTo(contextMenu.message);
-              setContextMenu(null);
-              inputRef.current?.focus();
-            }}
-            onForward={() => {
-              setForwardingMessage(contextMenu.message);
-              setShowForwardDialog(true);
-              setSelectedForwardChatIds([]);
-              setContextMenu(null);
-              loadAvailableChats();
-            }}
-            onEdit={() => {
-              setEditingMessage(contextMenu.message);
-              setNewMessage(contextMenu.message.content);
-              setContextMenu(null);
-              inputRef.current?.focus();
-            }}
-            onDelete={() => {
-              handleDeleteMessage(contextMenu.message.id);
-              setContextMenu(null);
-            }}
-            onReact={() => {
-              setShowEmojiPicker(contextMenu.message.id);
-              setContextMenu(null);
-            }}
-            onCopy={() => {
-              copyMessageText(contextMenu.message.content);
-              setContextMenu(null);
-            }}
-          />
-        )}
+  <MessageContextMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    message={contextMenu.message}
+    isOwn={contextMenu.message.userId === currentUser.id}
+    canDelete={contextMenu.message.userId === currentUser.id || userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin}
+    onClose={() => setContextMenu(null)}
+    onSelect={() => enterSelectionMode(contextMenu.message.id)}
+    onReply={() => {
+      setReplyingTo(contextMenu.message);
+      setContextMenu(null);
+      inputRef.current?.focus();
+    }}
+    onForward={() => {
+      setForwardingMessages([contextMenu.message.id]);
+      setSelectedForwardChatIds([]);
+      setShowForwardDialog(true);
+      setContextMenu(null);
+      loadAvailableChats();
+    }}
+    onEdit={() => {
+      setEditingMessage(contextMenu.message);
+      setNewMessage(contextMenu.message.content);
+      setContextMenu(null);
+      inputRef.current?.focus();
+    }}
+    onDelete={() => {
+      handleDeleteMessage(contextMenu.message.id);
+      setContextMenu(null);
+    }}
+    onReact={() => {
+      setShowEmojiPicker(contextMenu.message.id);
+      setContextMenu(null);
+    }}
+    onCopy={() => {
+      copyMessageText(contextMenu.message.content);
+      setContextMenu(null);
+    }}
+  />
+)}
         <AnimatePresence>
 </AnimatePresence>
 <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -2775,13 +2990,13 @@ const handleUploadFilesWithCaption = async () => {
     <div className="w-full flex items-center gap-2">
       <button
         onClick={() => setDeleteDialogOpen(false)}
-        className="px-6 py-3 rounded-xl bg-violet-500/20 hover:bg-violet-500/60 text-white text-lg w-full transition cursor-pointer duration-300"
+        className="px-6 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/60 text-white text-lg w-full transition cursor-pointer duration-300"
       >
         Отмена
       </button>
       <button
         onClick={confirmDeleteMessage}
-        className="px-6 py-3 rounded-xl bg-[#e53935]/20 hover:bg-[#e53935]/60 text-white text-lg w-full transition cursor-pointer duration-300"
+        className="px-6 py-2 rounded-xl bg-[#e53935]/20 hover:bg-[#e53935]/60 text-white text-lg w-full transition cursor-pointer duration-300"
       >
         Удалить
       </button>

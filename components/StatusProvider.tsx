@@ -43,7 +43,7 @@ export const StatusProvider: React.FC<StatusProviderProps> = ({ children, curren
 
   // Форматирование времени последнего визита
   const formatLastSeen = useCallback((lastActive: Date | null): string => {
-    if (!lastActive) return "был(а) недавно";
+    if (!lastActive) return "Был(а) недавно";
     
     const now = new Date();
     const last = new Date(lastActive);
