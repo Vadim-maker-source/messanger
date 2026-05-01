@@ -1121,3 +1121,91 @@ export async function removeUserAvatar() {
 
   return { success: true };
 }
+// Получение медиа-файлов из личного чата с пользователем
+export async function getUserMediaFiles(userId: string) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) throw new Error("Unauthorized");
+
+  // Находим приватный чат между пользователями
+  const chat = await prisma.chat.findFirst({
+    where: {
+      type: "PRIVATE",
+      AND: [
+        { users: { some: { id: currentUser.id } } },
+        { users: { some: { id: userId } } }
+      ]
+    }
+  });
+
+  if (!chat) {
+    return {
+      photos: [],
+      videos: [],
+      files: [],
+      audio: []
+    };
+  }
+
+  // Получаем все сообщения с файлами
+  const messages = await prisma.message.findMany({
+    where: {
+      chatId: chat.id,
+      fileUrl: { not: null },
+      deleted: false
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarUrl: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  // Группируем по типам
+  const photos = messages.filter(m => m.fileType?.startsWith('image/'));
+  const videos = messages.filter(m => m.fileType?.startsWith('video/'));
+  const audio = messages.filter(m => m.fileType?.startsWith('audio/'));
+  const files = messages.filter(m => 
+    m.fileType && 
+    !m.fileType.startsWith('image/') && 
+    !m.fileType.startsWith('video/') && 
+    !m.fileType.startsWith('audio/')
+  );
+
+  return {
+    photos: photos.map(m => ({
+      id: m.id,
+      url: m.fileUrl,
+      fileName: m.fileName,
+      createdAt: m.createdAt,
+      user: m.user
+    })),
+    videos: videos.map(m => ({
+      id: m.id,
+      url: m.fileUrl,
+      fileName: m.fileName,
+      createdAt: m.createdAt,
+      user: m.user
+    })),
+    audio: audio.map(m => ({
+      id: m.id,
+      url: m.fileUrl,
+      fileName: m.fileName,
+      createdAt: m.createdAt,
+      user: m.user
+    })),
+    files: files.map(m => ({
+      id: m.id,
+      url: m.fileUrl,
+      fileName: m.fileName,
+      fileType: m.fileType,
+      createdAt: m.createdAt,
+      user: m.user
+    }))
+  };
+}
