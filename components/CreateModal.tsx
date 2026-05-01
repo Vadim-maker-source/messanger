@@ -12,7 +12,12 @@ export default function CreateModal({ isOpen, onClose, type }: any) {
   const handleCreate = async () => {
     setLoading(true);
     try {
-      if (type === 'SERVER') await createServer(name);
+      if (type === 'SERVER') {
+        await createServer({
+          name,
+          access: "PUBLIC"
+        });
+      }
       // Добавить логику для других типов
       onClose();
     } catch (e) {

@@ -18,12 +18,13 @@ interface Invite {
 }
 
 interface InviteManagerProps {
-  chatId: string;
+  chatId?: string;
+  serverId?: string;
   chatName: string;
   chatType: string;
 }
 
-export default function InviteManager({ chatId, chatName, chatType }: InviteManagerProps) {
+export default function InviteManager({ chatId, serverId, chatName, chatType }: InviteManagerProps) {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showQR, setShowQR] = useState<string | null>(null);
@@ -34,11 +35,15 @@ export default function InviteManager({ chatId, chatName, chatType }: InviteMana
 
   useEffect(() => {
     loadInvites();
-  }, [chatId]);
+  }, [chatId, serverId]);
 
   const loadInvites = async () => {
     try {
-      const res = await fetch(`/api/invite/list?chatId=${chatId}`);
+      const params = new URLSearchParams();
+      if (chatId) params.append('chatId', chatId);
+      if (serverId) params.append('serverId', serverId);
+
+      const res = await fetch(`/api/invite/list?${params.toString()}`);
       const data = await res.json();
       setInvites(data);
     } catch (error) {
@@ -50,12 +55,16 @@ export default function InviteManager({ chatId, chatName, chatType }: InviteMana
 
   const createInvite = async () => {
     const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
+    const body: any = { maxUses, expiresAt };
+    if (chatId) body.chatId = chatId;
+    if (serverId) body.serverId = serverId;
+
     const res = await fetch("/api/invite/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId, maxUses, expiresAt })
+      body: JSON.stringify(body)
     });
-    
+
     if (res.ok) {
       loadInvites();
       setShowCreateModal(false);

@@ -3,10 +3,11 @@ import { getMessages } from "@/app/lib/api/chat";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { chatId: string } }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
-    const messages = await getMessages(params.chatId);
+    const { chatId } = await params;
+    const messages = await getMessages(chatId);
 
     return NextResponse.json({
       success: true,

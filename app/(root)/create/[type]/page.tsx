@@ -37,7 +37,8 @@ export default function CreatePage() {
       if (file) {
         const formData = new FormData();
         formData.append("file", file);
-        imageUrl = await uploadChatImage(formData) || "";
+        const uploadResult = await uploadChatImage(formData);
+        imageUrl = uploadResult?.url || "";
       }
 
       let result;

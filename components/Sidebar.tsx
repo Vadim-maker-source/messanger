@@ -17,6 +17,8 @@ import { signOut } from "next-auth/react";
 const MIN_WIDTH = 80;
 const MAX_WIDTH = 700;
 const DEFAULT_WIDTH = 470;
+const COLLAPSED_WIDTH = 80;
+const CHANNELS_WIDTH = 280;
 
 interface ChatItem {
   id: string;
@@ -53,7 +55,8 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   const [user, setUser] = useState<UserType | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  
+  const [chatsWidth, setChatsWidth] = useState(DEFAULT_WIDTH);
+
   const router = useRouter();
 
   useEffect(() => {
@@ -119,10 +122,17 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
 
   const handleServerClick = (item: ChatItem) => {
     if (item.uiType === 'SERVER') {
-      setExpandedServer(expandedServer === item.id ? null : item.id);
-      if (width <= MIN_WIDTH + 20) {
+      const isOpening = expandedServer !== item.id;
+      setExpandedServer(isOpening ? item.id : null);
+
+      if (isOpening) {
+        // Opening server - collapse chats to icons only
+        setChatsWidth(COLLAPSED_WIDTH);
+        setWidth(COLLAPSED_WIDTH + CHANNELS_WIDTH);
+      } else {
+        // Closing server - restore chats width
+        setChatsWidth(DEFAULT_WIDTH);
         setWidth(DEFAULT_WIDTH);
-        setIsExpanded(true);
       }
     } else {
       handleNavigation(`/chat/${item.id}`);
@@ -188,11 +198,19 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   };
 
   const toggleExpand = () => {
-    if (isExpanded) {
+    if (expandedServer) {
+      // If server is open, close it first
+      setExpandedServer(null);
+      setChatsWidth(DEFAULT_WIDTH);
+      setWidth(DEFAULT_WIDTH);
+      setIsExpanded(true);
+    } else if (isExpanded) {
       setWidth(MIN_WIDTH);
+      setChatsWidth(MIN_WIDTH);
       setIsExpanded(false);
     } else {
       setWidth(DEFAULT_WIDTH);
+      setChatsWidth(DEFAULT_WIDTH);
       setIsExpanded(true);
     }
   };
@@ -222,28 +240,31 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   // Separate chats and servers
   const chats = items.filter(item => item.uiType !== 'SERVER');
   const servers = items.filter(item => item.uiType === 'SERVER');
+  const activeServer = servers.find(s => s.id === expandedServer);
 
   return (
     <>
-      <motion.div 
-        ref={sidebarRef}
-        animate={{ width }}
-        transition={{ duration: isResizing ? 0 : 0.2 }}
-        className="h-full bg-[#0f0f12] flex flex-col z-50 relative shadow-2xl"
-        style={{ minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
-      >
+      <div className="flex h-full relative">
+        {/* Main Chats Sidebar */}
+        <motion.div
+          ref={sidebarRef}
+          animate={{ width: chatsWidth }}
+          transition={{ duration: isResizing ? 0 : 0.3 }}
+          className="h-full bg-[#0f0f12] flex flex-col z-50 relative shadow-2xl"
+          style={{ minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
+        >
         {/* Header */}
         <div className="px-3 py-3 border-b border-white/5">
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={toggleExpand}
               className="p-2 hover:bg-white/5 rounded-xl text-white/50 hover:text-violet-400 transition-all active:scale-90 shrink-0"
               title={isExpanded ? "Свернуть" : "Развернуть"}
             >
               <Menu size={22} />
             </button>
-            
-            {width > 100 && (
+
+            {chatsWidth > 100 && (
               <>
                 <button
                   onClick={() => handleNavigation('/search')}
@@ -252,7 +273,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                   <Search size={18} className="text-white/40 group-hover:text-violet-400" />
                   <span className="text-sm text-white/60 group-hover:text-violet-400">Поиск</span>
                 </button>
-                
+
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
@@ -321,66 +342,72 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
         {/* Chat List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {/* Servers Section */}
-          {servers.length > 0 && width > 100 && (
+          {servers.length > 0 && chatsWidth > 100 && (
             <div className="px-2 py-2">
               <div className="text-[11px] font-semibold text-white/40 px-3 py-1 uppercase tracking-wider">
                 Серверы
               </div>
               {servers.map((server) => (
-                <div key={server.id}>
-                  <button
-                    onClick={() => handleServerClick(server)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-all group"
-                  >
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center overflow-hidden">
-                        {server.image ? (
-                          <img src={server.image} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-sm font-bold text-violet-400">#{server.title?.[0]}</span>
-                        )}
-                      </div>
+                <button
+                  key={server.id}
+                  onClick={() => handleServerClick(server)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all group ${
+                    expandedServer === server.id ? 'bg-violet-500/20' : 'hover:bg-white/5'
+                  }`}
+                >
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center overflow-hidden">
+                      {server.image ? (
+                        <img src={server.image} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-violet-400">#{server.title?.[0]}</span>
+                      )}
                     </div>
-                    <span className="flex-1 text-left text-sm font-medium text-white/80 truncate">
-                      {server.title}
-                    </span>
-                    <ChevronRight size={14} className="text-white/20" />
-                  </button>
-                  
-                  <AnimatePresence>
-                    {expandedServer === server.id && server.chats && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="ml-12 flex flex-col gap-0.5 mb-1"
-                      >
-                        {server.chats.map((chat: any) => (
-                          <button
-                            key={chat.id}
-                            onClick={() => handleNavigation(`/chat/${chat.id}`)}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white/80 hover:bg-white/5 transition-all"
-                          >
-                            <Hash size={14} className="text-white/30" />
-                            <span className="truncate">{chat.name}</span>
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                  </div>
+                  <span className="flex-1 text-left text-sm font-medium text-white/80 truncate">
+                    {server.title}
+                  </span>
+                  <ChevronRight
+                    size={14}
+                    className={`text-white/20 transition-transform ${
+                      expandedServer === server.id ? 'rotate-90' : ''
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Servers as icons when collapsed */}
+          {servers.length > 0 && chatsWidth <= 100 && (
+            <div className="px-2 py-2 flex flex-col gap-2">
+              {servers.map((server) => (
+                <button
+                  key={server.id}
+                  onClick={() => handleServerClick(server)}
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                    expandedServer === server.id ? 'bg-violet-500/20 ring-2 ring-violet-500/50' : 'bg-violet-600/20 hover:bg-violet-600/30'
+                  }`}
+                  title={server.title}
+                >
+                  {server.image ? (
+                    <img src={server.image} className="w-full h-full object-cover rounded-xl" />
+                  ) : (
+                    <span className="text-sm font-bold text-violet-400">#{server.title?.[0]}</span>
+                  )}
+                </button>
               ))}
             </div>
           )}
 
           {/* Chats Section */}
           <div className="px-2 py-2">
-            {width > 100 && chats.length > 0 && (
+            {chatsWidth > 100 && chats.length > 0 && (
               <div className="text-[11px] font-semibord text-white/40 px-3 py-1 uppercase tracking-wider">
                 Чаты
               </div>
             )}
-            
+
             {chats.map((chat) => (
               <motion.button
                 key={chat.id}
@@ -398,7 +425,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                       </span>
                     )}
                   </div>
-                  
+
                   {/* Online indicator */}
                   {chat.isTyping && (
                     <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0f0f12]" />
@@ -406,13 +433,13 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                 </div>
 
                 {/* Content */}
-                {width > 100 && (
+                {chatsWidth > 100 && (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold text-white/90 truncate">
                         {chat.title}
                       </h3>
-                      
+
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         {chat.isPinned && <Pin size={10} className="text-white/30" />}
                         {chat.lastMessage && (
@@ -422,7 +449,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1 flex-1 min-w-0">
                         {chat.lastMessage && (
@@ -434,7 +461,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                               {chat.lastMessage.isVoice && '🎤 Голосовое сообщение'}
                               {chat.lastMessage.isPhoto && '🖼️ Фото'}
                               {chat.lastMessage.isFile && '📎 Файл'}
-                              {!chat.lastMessage.isVoice && !chat.lastMessage.isPhoto && !chat.lastMessage.isFile && 
+                              {!chat.lastMessage.isVoice && !chat.lastMessage.isPhoto && !chat.lastMessage.isFile &&
                                 truncateText(chat.lastMessage.content, 45)}
                             </p>
                           </>
@@ -443,7 +470,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                           <p className="text-[13px] text-white/40 truncate">{chat.subtitle}</p>
                         )}
                       </div>
-                      
+
                       {chat.unreadCount && chat.unreadCount > 0 && (
                         <div className="min-w-[20px] h-5 bg-red-500 rounded-full flex items-center justify-center px-1.5 ml-2">
                           <span className="text-[10px] font-bold text-white">
@@ -451,7 +478,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                           </span>
                         </div>
                       )}
-                      
+
                       {chat.isMuted && (
                         <Bell size={12} className="text-white/20 ml-2" />
                       )}
@@ -464,7 +491,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
         </div>
 
         {/* User Info Footer (when collapsed) */}
-        {width <= 100 && user && (
+        {chatsWidth <= 100 && user && (
           <div className="px-3 py-3 border-t border-white/5">
             <div className="relative">
               <button
@@ -481,7 +508,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
               </button>
               
               <AnimatePresence>
-                {showUserMenu && width <= 100 && (
+                {showUserMenu && chatsWidth <= 100 && (
                   <motion.div
                     initial={{ opacity: 0, x: -10, scale: 0.95 }}
                     animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -529,7 +556,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
         )}
 
         {/* Create Button (only when expanded) */}
-        {width > 100 && (
+        {chatsWidth > 100 && (
           <div className="p-3 border-t border-white/5">
             <button 
               onClick={() => setShowCreateMenu(!showCreateMenu)}
@@ -571,6 +598,87 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
           </div>
         )}
       </motion.div>
+
+      {/* Server Channels Panel */}
+      <AnimatePresence>
+        {expandedServer && activeServer && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: CHANNELS_WIDTH, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="h-full bg-[#16161a] border-l border-white/5 flex flex-col overflow-hidden"
+          >
+            {/* Server Header */}
+            <div className="px-4 py-3 border-b border-white/5">
+              <button
+                onClick={() => handleNavigation(`/chat/${activeServer.id}/data`)}
+                className="w-full flex items-center gap-3 hover:bg-white/5 rounded-xl p-2 transition-all group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center overflow-hidden shrink-0">
+                  {activeServer.image ? (
+                    <img src={activeServer.image} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-sm font-bold text-violet-400">
+                      #{activeServer.title?.[0]}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <h3 className="text-sm font-semibold text-white/90 truncate group-hover:text-violet-400 transition-colors">
+                    {activeServer.title}
+                  </h3>
+                  <p className="text-xs text-white/40">
+                    {activeServer.chats?.length || 0} каналов
+                  </p>
+                </div>
+                <ChevronRight size={14} className="text-white/20 group-hover:text-violet-400 transition-colors" />
+              </button>
+              <button
+                onClick={() => {
+                  setExpandedServer(null);
+                  setChatsWidth(DEFAULT_WIDTH);
+                  setWidth(DEFAULT_WIDTH);
+                }}
+                className="absolute top-3 right-3 p-1.5 hover:bg-white/5 rounded-lg text-white/40 hover:text-white/80 transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Channels List */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">
+              <div className="text-[11px] font-semibold text-white/40 px-3 py-1 uppercase tracking-wider">
+                Текстовые каналы
+              </div>
+              {activeServer.chats && activeServer.chats.length > 0 ? (
+                activeServer.chats.map((chat: any) => (
+                  <button
+                    key={chat.id}
+                    onClick={() => handleNavigation(`/chat/${chat.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white/90 hover:bg-white/5 transition-all group"
+                  >
+                    <Hash size={16} className="text-white/40 group-hover:text-violet-400" />
+                    <span className="flex-1 text-left truncate">{chat.name}</span>
+                    {chat.unreadCount && chat.unreadCount > 0 && (
+                      <div className="min-w-[18px] h-4 bg-red-500 rounded-full flex items-center justify-center px-1">
+                        <span className="text-[9px] font-bold text-white">
+                          {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-center text-sm text-white/30">
+                  Нет каналов
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
 
       {/* Resize Handle */}
       <div
