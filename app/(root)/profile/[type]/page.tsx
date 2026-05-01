@@ -25,9 +25,11 @@ import {
   Video,
   FileText,
   Music,
-  Play
+  Play,
+  X,
+  ChevronLeft
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { exportHistoryWithUser, getCurrentUser, getUserProfile, getUserMediaFiles } from "@/app/lib/api/user";
 import { getOrCreatePrivateChat } from "@/app/lib/api/chat";
 import { useStatus } from "@/components/StatusProvider";
@@ -93,6 +95,54 @@ export default function UserProfilePage() {
   const [isExporting, setIsExporting] = useState(false);
   const [mediaFiles, setMediaFiles] = useState<any>(null);
   const [mediaTab, setMediaTab] = useState<"photos" | "videos" | "files" | "audio">("photos");
+  const [selectedMedia, setSelectedMedia] = useState<any>(null);
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number>(0);
+
+  // Функции для модалки медиа
+  const openMediaModal = (media: any, index: number) => {
+    setSelectedMedia(media);
+    setSelectedMediaIndex(index);
+  };
+
+  const closeMediaModal = () => {
+    setSelectedMedia(null);
+  };
+
+  const getCurrentMediaList = () => {
+    if (mediaTab === "photos") return mediaFiles?.photos || [];
+    if (mediaTab === "videos") return mediaFiles?.videos || [];
+    return [];
+  };
+
+  const goToPrevMedia = () => {
+    const list = getCurrentMediaList();
+    if (list.length === 0) return;
+    const newIndex = selectedMediaIndex > 0 ? selectedMediaIndex - 1 : list.length - 1;
+    setSelectedMediaIndex(newIndex);
+    setSelectedMedia(list[newIndex]);
+  };
+
+  const goToNextMedia = () => {
+    const list = getCurrentMediaList();
+    if (list.length === 0) return;
+    const newIndex = selectedMediaIndex < list.length - 1 ? selectedMediaIndex + 1 : 0;
+    setSelectedMediaIndex(newIndex);
+    setSelectedMedia(list[newIndex]);
+  };
+
+  // Обработка клавиш для навигации
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!selectedMedia) return;
+      if (e.key === "Escape") closeMediaModal();
+      if (e.key === "ArrowLeft") goToPrevMedia();
+      if (e.key === "ArrowRight") goToNextMedia();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedMedia, selectedMediaIndex, mediaTab, mediaFiles]);
+
 
   useEffect(() => {
     const loadData = async () => {
@@ -415,11 +465,14 @@ export default function UserProfilePage() {
         </div>
 
         {/* Content */}
-        <div className="space-y-6">
+        <AnimatePresence mode="wait">
           {activeTab === "info" && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              key="info"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3 }}
               className="space-y-6"
             >
               {/* Bio */}
@@ -471,8 +524,11 @@ export default function UserProfilePage() {
 
           {activeTab === "activity" && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              key="activity"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3 }}
               className="space-y-6"
             >
               {/* Activity Summary */}
@@ -543,8 +599,11 @@ export default function UserProfilePage() {
 
           {activeTab === "mutual" && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              key="mutual"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3 }}
               className="bg-white/5 rounded-2xl p-6"
             >
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -601,51 +660,82 @@ export default function UserProfilePage() {
 
           {activeTab === "media" && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              key="media"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.3 }}
               className="space-y-4"
             >
               {/* Media Tabs */}
               <div className="flex gap-2 bg-white/5 rounded-xl p-1">
                 <button
                   onClick={() => setMediaTab("photos")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                    mediaTab === "photos" ? "bg-violet-500/20 text-violet-400" : "text-white/60 hover:text-white/80"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors relative ${
+                    mediaTab === "photos" ? "text-violet-400" : "text-white/60 hover:text-white/80"
                   }`}
                 >
-                  <Image size={16} />
-                  <span className="text-sm font-medium">Фото</span>
-                  {mediaFiles?.photos && <span className="text-xs">({mediaFiles.photos.length})</span>}
+                  {mediaTab === "photos" && (
+                    <motion.div
+                      layoutId="mediaTabIndicator"
+                      className="absolute inset-0 bg-violet-500/20 rounded-lg"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <Image size={16} className="relative z-10" />
+                  <span className="text-sm font-medium relative z-10">Фото</span>
+                  {mediaFiles?.photos && <span className="text-xs relative z-10">({mediaFiles.photos.length})</span>}
                 </button>
                 <button
                   onClick={() => setMediaTab("videos")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                    mediaTab === "videos" ? "bg-violet-500/20 text-violet-400" : "text-white/60 hover:text-white/80"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors relative ${
+                    mediaTab === "videos" ? "text-violet-400" : "text-white/60 hover:text-white/80"
                   }`}
                 >
-                  <Video size={16} />
-                  <span className="text-sm font-medium">Видео</span>
-                  {mediaFiles?.videos && <span className="text-xs">({mediaFiles.videos.length})</span>}
+                  {mediaTab === "videos" && (
+                    <motion.div
+                      layoutId="mediaTabIndicator"
+                      className="absolute inset-0 bg-violet-500/20 rounded-lg"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <Video size={16} className="relative z-10" />
+                  <span className="text-sm font-medium relative z-10">Видео</span>
+                  {mediaFiles?.videos && <span className="text-xs relative z-10">({mediaFiles.videos.length})</span>}
                 </button>
                 <button
                   onClick={() => setMediaTab("files")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                    mediaTab === "files" ? "bg-violet-500/20 text-violet-400" : "text-white/60 hover:text-white/80"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors relative ${
+                    mediaTab === "files" ? "text-violet-400" : "text-white/60 hover:text-white/80"
                   }`}
                 >
-                  <FileText size={16} />
-                  <span className="text-sm font-medium">Файлы</span>
-                  {mediaFiles?.files && <span className="text-xs">({mediaFiles.files.length})</span>}
+                  {mediaTab === "files" && (
+                    <motion.div
+                      layoutId="mediaTabIndicator"
+                      className="absolute inset-0 bg-violet-500/20 rounded-lg"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <FileText size={16} className="relative z-10" />
+                  <span className="text-sm font-medium relative z-10">Файлы</span>
+                  {mediaFiles?.files && <span className="text-xs relative z-10">({mediaFiles.files.length})</span>}
                 </button>
                 <button
                   onClick={() => setMediaTab("audio")}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                    mediaTab === "audio" ? "bg-violet-500/20 text-violet-400" : "text-white/60 hover:text-white/80"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors relative ${
+                    mediaTab === "audio" ? "text-violet-400" : "text-white/60 hover:text-white/80"
                   }`}
                 >
-                  <Music size={16} />
-                  <span className="text-sm font-medium">Аудио</span>
-                  {mediaFiles?.audio && <span className="text-xs">({mediaFiles.audio.length})</span>}
+                  {mediaTab === "audio" && (
+                    <motion.div
+                      layoutId="mediaTabIndicator"
+                      className="absolute inset-0 bg-violet-500/20 rounded-lg"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <Music size={16} className="relative z-10" />
+                  <span className="text-sm font-medium relative z-10">Аудио</span>
+                  {mediaFiles?.audio && <span className="text-xs relative z-10">({mediaFiles.audio.length})</span>}
                 </button>
               </div>
 
@@ -656,18 +746,22 @@ export default function UserProfilePage() {
                     <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
                   </div>
                 ) : (
-                  <>
+                  <AnimatePresence mode="wait">
                     {/* Photos Grid */}
                     {mediaTab === "photos" && (
-                      <div>
+                      <motion.div
+                        key="photos"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.3 }}
+                      >
                         {mediaFiles.photos.length > 0 ? (
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {mediaFiles.photos.map((photo: any) => (
-                              <a
+                            {mediaFiles.photos.map((photo: any, index: number) => (
+                              <button
                                 key={photo.id}
-                                href={photo.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                onClick={() => openMediaModal(photo, index)}
                                 className="aspect-square rounded-xl overflow-hidden bg-white/5 hover:ring-2 hover:ring-violet-500 transition-all group relative"
                               >
                                 <img
@@ -676,28 +770,32 @@ export default function UserProfilePage() {
                                   className="w-full h-full object-cover"
                                 />
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <Download size={24} className="text-white" />
+                                  <Image size={24} className="text-white" />
                                 </div>
-                              </a>
+                              </button>
                             ))}
                           </div>
                         ) : (
                           <p className="text-white/60 text-center py-12">Нет фотографий</p>
                         )}
-                      </div>
+                      </motion.div>
                     )}
 
                     {/* Videos Grid */}
                     {mediaTab === "videos" && (
-                      <div>
+                      <motion.div
+                        key="videos"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.3 }}
+                      >
                         {mediaFiles.videos.length > 0 ? (
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {mediaFiles.videos.map((video: any) => (
-                              <a
+                            {mediaFiles.videos.map((video: any, index: number) => (
+                              <button
                                 key={video.id}
-                                href={video.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                onClick={() => openMediaModal(video, index)}
                                 className="aspect-square rounded-xl overflow-hidden bg-white/5 hover:ring-2 hover:ring-violet-500 transition-all group relative"
                               >
                                 <video
@@ -707,18 +805,24 @@ export default function UserProfilePage() {
                                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                                   <Play size={48} className="text-white opacity-80 group-hover:opacity-100 transition-opacity" />
                                 </div>
-                              </a>
+                              </button>
                             ))}
                           </div>
                         ) : (
                           <p className="text-white/60 text-center py-12">Нет видео</p>
                         )}
-                      </div>
+                      </motion.div>
                     )}
 
                     {/* Files List */}
                     {mediaTab === "files" && (
-                      <div>
+                      <motion.div
+                        key="files"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.3 }}
+                      >
                         {mediaFiles.files.length > 0 ? (
                           <div className="space-y-2">
                             {mediaFiles.files.map((file: any) => (
@@ -745,12 +849,18 @@ export default function UserProfilePage() {
                         ) : (
                           <p className="text-white/60 text-center py-12">Нет файлов</p>
                         )}
-                      </div>
+                      </motion.div>
                     )}
 
                     {/* Audio List */}
                     {mediaTab === "audio" && (
-                      <div>
+                      <motion.div
+                        key="audio"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.3 }}
+                      >
                         {mediaFiles.audio.length > 0 ? (
                           <div className="space-y-2">
                             {mediaFiles.audio.map((audio: any) => (
@@ -774,15 +884,94 @@ export default function UserProfilePage() {
                         ) : (
                           <p className="text-white/60 text-center py-12">Нет аудио</p>
                         )}
-                      </div>
+                      </motion.div>
                     )}
-                  </>
+                  </AnimatePresence>
                 )}
               </div>
             </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
+
+      {/* Media Modal */}
+      <AnimatePresence>
+        {selectedMedia && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+            onClick={closeMediaModal}
+          >
+            {/* Close Button */}
+            <button
+              onClick={closeMediaModal}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+            >
+              <X size={24} className="text-white" />
+            </button>
+
+            {/* Navigation Buttons */}
+            {getCurrentMediaList().length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goToPrevMedia();
+                  }}
+                  className="absolute left-4 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+                >
+                  <ChevronLeft size={32} className="text-white" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goToNextMedia();
+                  }}
+                  className="absolute right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+                >
+                  <ChevronRight size={32} className="text-white" />
+                </button>
+              </>
+            )}
+
+            {/* Media Content */}
+            <motion.div
+              key={selectedMedia.id}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="max-w-[90vw] max-h-[90vh] flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {mediaTab === "photos" ? (
+                <img
+                  src={selectedMedia.url}
+                  alt={selectedMedia.fileName || "Photo"}
+                  className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                />
+              ) : (
+                <video
+                  src={selectedMedia.url}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                />
+              )}
+            </motion.div>
+
+            {/* Media Info */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur px-4 py-2 rounded-full">
+              <p className="text-white/80 text-sm">
+                {selectedMediaIndex + 1} / {getCurrentMediaList().length}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

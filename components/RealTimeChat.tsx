@@ -1217,13 +1217,8 @@ const startAudioRecording = async () => {
         const formData = new FormData();
         formData.append("file", file);
         const fileUrl = await uploadChatImage(formData);
-        const sentMessage = await sendMessage(chatId, "🎤 Голосовое сообщение", fileUrl?.url, 'AUDIO', null, replyingTo?.id);
-        const formattedMessage = {
-          ...sentMessage,
-          reactions: sentMessage.reactions as { [key: string]: string[] } | null,
-          readReceipts: []
-        } as Message;
-        setMessages(prev => [...prev, formattedMessage]);
+        await sendMessage(chatId, "", fileUrl?.url, 'AUDIO', null, replyingTo?.id);
+        // Не добавляем сообщение вручную - оно придет через Pusher
         setHasMarkedRead(false);
       } catch (error) {
         console.error("Error sending voice message:", error);
@@ -1346,13 +1341,8 @@ const startRoundVideoRecording = async () => {
       const formData = new FormData();
       formData.append("file", file);
       const fileUrl = await uploadChatImage(formData);
-      const sentMessage = await sendMessage(chatId, "📹 Видеосообщение", fileUrl?.url, 'ROUND', null, replyingTo?.id);
-      const formattedMessage = {
-        ...sentMessage,
-        reactions: sentMessage.reactions as { [key: string]: string[] } | null,
-        readReceipts: []
-      } as Message;
-      setMessages(prev => [...prev, formattedMessage]);
+      await sendMessage(chatId, "", fileUrl?.url, 'ROUND', null, replyingTo?.id);
+      // Не добавляем сообщение вручную - оно придет через Pusher
       setHasMarkedRead(false);
     } catch (error) {
       console.error("Error sending round video:", error);
@@ -2313,30 +2303,16 @@ const handleUploadFilesWithCaption = async () => {
       
       // Формируем текст сообщения
       // Если есть подпись - используем её как основной текст
-      // Если нет - используем стандартное описание
+      // Если нет подписи - отправляем пустую строку
       let messageContent = "";
-      
+
       if (currentCaption) {
         messageContent = currentCaption;
-      } else {
-        if (fileType === 'IMAGE') {
-          messageContent = "📷 Фото";
-        } else if (fileType === 'VIDEO') {
-          messageContent = "🎥 Видео";
-        } else {
-          messageContent = `📎 ${file.name}`;
-        }
       }
-      
-      // Отправляем ОДНО сообщение с файлом и текстом
-      const sentMessage = await sendMessage(chatId, messageContent, fileUrl.url, fileType, file.name, replyingTo?.id);
-      const formattedMessage = {
-        ...sentMessage,
-        reactions: sentMessage.reactions as { [key: string]: string[] } | null,
-        readReceipts: []
-      } as Message;
-      
-      setMessages(prev => [...prev, formattedMessage]);
+
+      // Отправляем сообщение с файлом и текстом (или пустой строкой)
+      await sendMessage(chatId, messageContent, fileUrl.url, fileType, file.name, replyingTo?.id);
+      // Не добавляем сообщение вручную - оно придет через Pusher
       successCount++;
       setHasMarkedRead(false);
     }

@@ -1167,14 +1167,24 @@ export async function getUserMediaFiles(userId: string) {
   });
 
   // Группируем по типам
-  const photos = messages.filter(m => m.fileType?.startsWith('image/'));
-  const videos = messages.filter(m => m.fileType?.startsWith('video/'));
-  const audio = messages.filter(m => m.fileType?.startsWith('audio/'));
-  const files = messages.filter(m => 
-    m.fileType && 
-    !m.fileType.startsWith('image/') && 
-    !m.fileType.startsWith('video/') && 
-    !m.fileType.startsWith('audio/')
+  const photos = messages.filter(m =>
+    m.fileType?.startsWith('image/') || m.fileType === 'IMAGE'
+  );
+  const videos = messages.filter(m =>
+    m.fileType?.startsWith('video/') || m.fileType === 'VIDEO'
+  );
+  const audio = messages.filter(m =>
+    m.fileType?.startsWith('audio/') || m.fileType === 'AUDIO' || m.fileType === 'ROUND'
+  );
+  const files = messages.filter(m =>
+    m.fileType &&
+    !m.fileType.startsWith('image/') &&
+    m.fileType !== 'IMAGE' &&
+    !m.fileType.startsWith('video/') &&
+    m.fileType !== 'VIDEO' &&
+    !m.fileType.startsWith('audio/') &&
+    m.fileType !== 'AUDIO' &&
+    m.fileType !== 'ROUND'
   );
 
   return {
