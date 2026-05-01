@@ -1589,3 +1589,34 @@ export async function updateChat(chatId: string, data: { name?: string; imageUrl
 
   return updatedChat;
 }
+
+// --- УДАЛЕНИЕ СЕРВЕРА ---
+export async function deleteServer(serverId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    select: { ownerId: true }
+  });
+
+  if (!server) throw new Error("Server not found");
+  if (server.ownerId !== user.id) throw new Error("Only server owner can delete server");
+
+  // Удаляем все каналы сервера (каскадное удаление сообщений и участников)
+  await prisma.chat.deleteMany({
+    where: { serverId }
+  });
+
+  // Удаляем все инвайты сервера
+  await prisma.invite.deleteMany({
+    where: { serverId }
+  });
+
+  // Удаляем сам сервер
+  await prisma.server.delete({
+    where: { id: serverId }
+  });
+
+  return { success: true };
+}

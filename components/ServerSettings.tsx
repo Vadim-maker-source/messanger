@@ -27,11 +27,12 @@ import {
   LogOut,
   Camera,
   Loader2,
+  MessageSquare,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStatus } from "./StatusProvider";
 import InviteManager from "./InviteManager";
-import { updateServer, createServerChannel } from "@/app/lib/api/chat";
+import { updateServer, createServerChannel, deleteServer, deleteChat } from "@/app/lib/api/chat";
 import { uploadChatImage } from "@/app/lib/yandex-storage";
 import {
   Dialog,
@@ -63,7 +64,26 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
   const [imagePreview, setImagePreview] = useState<string | null>(server.imageUrl);
   const [showChannelDialog, setShowChannelDialog] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelType, setNewChannelType] = useState<"CHANNEL" | "GROUP">("CHANNEL");
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+  const [deletingChannelId, setDeletingChannelId] = useState<string | null>(null);
+
+  const handleDeleteChannel = async (channelId: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот канал? Все сообщения будут удалены.")) {
+      return;
+    }
+
+    setDeletingChannelId(channelId);
+    try {
+      await deleteChat(channelId);
+      router.refresh();
+    } catch (error) {
+      console.error("Error deleting channel:", error);
+      alert(error instanceof Error ? error.message : "Ошибка при удалении канала");
+    } finally {
+      setDeletingChannelId(null);
+    }
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -116,17 +136,33 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
     try {
       await createServerChannel(server.id, {
         name: newChannelName,
-        type: "CHANNEL"
+        type: newChannelType
       });
 
       setShowChannelDialog(false);
       setNewChannelName("");
+      setNewChannelType("CHANNEL");
       router.refresh();
     } catch (error) {
       console.error("Error creating channel:", error);
       alert(error instanceof Error ? error.message : "Ошибка при создании канала");
     } finally {
       setIsCreatingChannel(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteServer(server.id);
+      router.push("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Error deleting server:", error);
+      alert(error instanceof Error ? error.message : "Ошибка при удалении сервера");
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -168,22 +204,6 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
   const handleDeleteClick = () => {
     setDeleteDialogOpen(true);
     setShowMenu(false);
-  };
-
-  const handleDeleteConfirm = async () => {
-    setIsDeleting(true);
-    try {
-      // TODO: Implement server deletion
-      console.log("Deleting server:", server.id);
-      router.push("/");
-      router.refresh();
-    } catch (error) {
-      console.error("Error deleting server:", error);
-      alert(error instanceof Error ? error.message : "Ошибка при удалении сервера");
-    } finally {
-      setIsDeleting(false);
-      setDeleteDialogOpen(false);
-    }
   };
 
   const AvatarWithStatus = ({
@@ -521,14 +541,24 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
               </div>
               <div className="space-y-2">
                 {server.chats.map((chat: any) => (
-                  <button
+                  <div
                     key={chat.id}
-                    onClick={() => router.push(`/chat/${chat.id}`)}
                     className="w-full flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all group"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                        <Hash size={18} />
+                    <button
+                      onClick={() => router.push(`/chat/${chat.id}`)}
+                      className="flex items-center gap-3 flex-1"
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        chat.type === "CHANNEL"
+                          ? "bg-blue-500/20 text-blue-400"
+                          : "bg-green-500/20 text-green-400"
+                      }`}>
+                        {chat.type === "CHANNEL" ? (
+                          <Hash size={18} />
+                        ) : (
+                          <MessageSquare size={18} />
+                        )}
                       </div>
                       <div className="text-left">
                         <p className="font-medium text-white/90">{chat.name}</p>
@@ -536,9 +566,22 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                           {chat.type === "CHANNEL" ? "Канал" : "Группа"} • {chat._count?.users || 0} участников
                         </p>
                       </div>
-                    </div>
-                    <ChevronRight size={18} className="text-white/20 group-hover:text-white/60 transition-colors" />
-                  </button>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteChannel(chat.id)}
+                        disabled={deletingChannelId === chat.id}
+                        className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-red-400 opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                        title="Удалить"
+                      >
+                        {deletingChannelId === chat.id ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={16} />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -723,29 +766,67 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-                <Hash className="w-6 h-6 text-blue-400" />
+                {newChannelType === "CHANNEL" ? (
+                  <Hash className="w-6 h-6 text-blue-400" />
+                ) : (
+                  <Users className="w-6 h-6 text-green-400" />
+                )}
               </div>
               <DialogTitle className="text-xl font-semibold text-white">
-                Создать канал
+                Создать {newChannelType === "CHANNEL" ? "канал" : "чат"}
               </DialogTitle>
             </div>
             <DialogDescription className="text-white/60 pt-4">
-              Создайте новый текстовый канал на сервере. Все участники сервера получат доступ к каналу.
+              Создайте новый {newChannelType === "CHANNEL" ? "текстовый канал" : "групповой чат"} на сервере. Все участники сервера получат доступ.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
-            <label className="text-sm font-medium text-white/80 mb-2 block">
-              Название канала
-            </label>
-            <input
-              type="text"
-              value={newChannelName}
-              onChange={(e) => setNewChannelName(e.target.value)}
-              placeholder="общий-чат"
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-violet-500 transition-colors"
-              disabled={isCreatingChannel}
-            />
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium text-white/80 mb-2 block">
+                Тип
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setNewChannelType("CHANNEL")}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all ${
+                    newChannelType === "CHANNEL"
+                      ? "bg-blue-500/20 border-2 border-blue-500"
+                      : "bg-white/5 border-2 border-transparent hover:bg-white/10"
+                  }`}
+                  disabled={isCreatingChannel}
+                >
+                  <Hash size={18} className="text-blue-400" />
+                  <span className="font-medium">Канал</span>
+                </button>
+                <button
+                  onClick={() => setNewChannelType("GROUP")}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all ${
+                    newChannelType === "GROUP"
+                      ? "bg-green-500/20 border-2 border-green-500"
+                      : "bg-white/5 border-2 border-transparent hover:bg-white/10"
+                  }`}
+                  disabled={isCreatingChannel}
+                >
+                  <Users size={18} className="text-green-400" />
+                  <span className="font-medium">Чат</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-white/80 mb-2 block">
+                Название
+              </label>
+              <input
+                type="text"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                placeholder={newChannelType === "CHANNEL" ? "общий-чат" : "Общение"}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-violet-500 transition-colors"
+                disabled={isCreatingChannel}
+              />
+            </div>
           </div>
 
           <DialogFooter className="flex gap-3 sm:gap-0">
@@ -753,6 +834,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
               onClick={() => {
                 setShowChannelDialog(false);
                 setNewChannelName("");
+                setNewChannelType("CHANNEL");
               }}
               disabled={isCreatingChannel}
               className="flex-1 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors font-medium disabled:opacity-50"
@@ -762,7 +844,11 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
             <button
               onClick={handleCreateChannel}
               disabled={isCreatingChannel || !newChannelName.trim()}
-              className="flex-1 px-4 py-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
+              className={`flex-1 px-4 py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium ${
+                newChannelType === "CHANNEL"
+                  ? "bg-blue-500/10 hover:bg-blue-500/20 text-blue-400"
+                  : "bg-green-500/10 hover:bg-green-500/20 text-green-400"
+              }`}
             >
               {isCreatingChannel ? (
                 <>
@@ -771,8 +857,8 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                 </>
               ) : (
                 <>
-                  <Hash size={16} />
-                  Создать канал
+                  {newChannelType === "CHANNEL" ? <Hash size={16} /> : <Users size={16} />}
+                  Создать
                 </>
               )}
             </button>
