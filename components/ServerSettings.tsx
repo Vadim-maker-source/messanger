@@ -25,10 +25,14 @@ import {
   UserPlus,
   Settings,
   LogOut,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStatus } from "./StatusProvider";
 import InviteManager from "./InviteManager";
+import { updateServer, createServerChannel } from "@/app/lib/api/chat";
+import { uploadChatImage } from "@/app/lib/yandex-storage";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +58,77 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(server.imageUrl);
+  const [showChannelDialog, setShowChannelDialog] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      let imageUrl = server.imageUrl;
+
+      // Загружаем новое изображение, если оно выбрано
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        const uploadResult = await uploadChatImage(formData);
+        imageUrl = uploadResult?.url || imageUrl;
+      }
+
+      // Обновляем сервер
+      await updateServer(server.id, {
+        name: editedName,
+        imageUrl: imageUrl || undefined
+      });
+
+      setIsEditing(false);
+      router.refresh();
+    } catch (error) {
+      console.error("Error updating server:", error);
+      alert(error instanceof Error ? error.message : "Ошибка при обновлении сервера");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateChannel = async () => {
+    if (!newChannelName.trim()) {
+      alert("Введите название канала");
+      return;
+    }
+
+    setIsCreatingChannel(true);
+    try {
+      await createServerChannel(server.id, {
+        name: newChannelName,
+        type: "CHANNEL"
+      });
+
+      setShowChannelDialog(false);
+      setNewChannelName("");
+      router.refresh();
+    } catch (error) {
+      console.error("Error creating channel:", error);
+      alert(error instanceof Error ? error.message : "Ошибка при создании канала");
+    } finally {
+      setIsCreatingChannel(false);
+    }
+  };
 
   const formatDate = (date: Date) => {
     if (!date) return "Неизвестно";
@@ -218,7 +293,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                     <button
                       onClick={() => {
                         setShowMenu(false);
-                        // TODO: Add channel
+                        setShowChannelDialog(true);
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 rounded-xl transition-colors text-sm"
                     >
@@ -247,21 +322,29 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
           <div className="flex flex-col items-center text-center">
             <div className="relative">
               <AvatarWithStatus
-                src={server.imageUrl}
+                src={imagePreview}
                 name={server.name}
                 isOnline={false}
                 size="lg"
                 showStatus={false}
               />
               {isEditing && isAdmin && (
-                <button
-                  onClick={() => document.getElementById("avatar-upload")?.click()}
-                  className="absolute bottom-0 right-0 p-3 bg-violet-500 rounded-full hover:bg-violet-600 transition-colors shadow-lg"
-                >
-                  <Edit3 size={16} />
-                </button>
+                <>
+                  <button
+                    onClick={() => document.getElementById("server-avatar-upload")?.click()}
+                    className="absolute bottom-0 right-0 p-3 bg-violet-500 rounded-full hover:bg-violet-600 transition-colors shadow-lg"
+                  >
+                    <Camera size={16} />
+                  </button>
+                  <input
+                    id="server-avatar-upload"
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                  />
+                </>
               )}
-              <input id="avatar-upload" type="file" className="hidden" accept="image/*" />
             </div>
 
             {isEditing && isAdmin ? (
@@ -275,20 +358,33 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                 />
                 <div className="flex gap-3 mt-4">
                   <button
-                    onClick={() => setIsEditing(false)}
-                    className="flex-1 px-4 py-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors font-medium"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditedName(server.name);
+                      setImagePreview(server.imageUrl);
+                      setImageFile(null);
+                    }}
+                    disabled={isSaving}
+                    className="flex-1 px-4 py-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors font-medium disabled:opacity-50"
                   >
                     Отмена
                   </button>
                   <button
-                    onClick={() => {
-                      // TODO: save changes
-                      setIsEditing(false);
-                    }}
-                    className="flex-1 px-4 py-3 bg-violet-500 rounded-2xl hover:bg-violet-600 transition-colors flex items-center justify-center gap-2 font-medium"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="flex-1 px-4 py-3 bg-violet-500 rounded-2xl hover:bg-violet-600 transition-colors flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
-                    <Save size={18} />
-                    Сохранить
+                    {isSaving ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Сохранение...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        Сохранить
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -316,7 +412,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
           </button>
 
           <button
-            onClick={() => {/* TODO: Add channel */}}
+            onClick={() => setShowChannelDialog(true)}
             className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
           >
             <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
@@ -416,7 +512,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                 </div>
                 {isAdmin && (
                   <button
-                    onClick={() => {/* TODO: Add channel */}}
+                    onClick={() => setShowChannelDialog(true)}
                     className="p-2 hover:bg-white/5 rounded-xl transition-colors"
                   >
                     <Hash size={18} className="text-violet-400" />
@@ -614,6 +710,69 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                 <>
                   <Trash2 size={16} />
                   Удалить сервер
+                </>
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Channel Dialog */}
+      <Dialog open={showChannelDialog} onOpenChange={setShowChannelDialog}>
+        <DialogContent className="bg-[#121214] border border-white/10 text-white sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Hash className="w-6 h-6 text-blue-400" />
+              </div>
+              <DialogTitle className="text-xl font-semibold text-white">
+                Создать канал
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-white/60 pt-4">
+              Создайте новый текстовый канал на сервере. Все участники сервера получат доступ к каналу.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <label className="text-sm font-medium text-white/80 mb-2 block">
+              Название канала
+            </label>
+            <input
+              type="text"
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              placeholder="общий-чат"
+              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-violet-500 transition-colors"
+              disabled={isCreatingChannel}
+            />
+          </div>
+
+          <DialogFooter className="flex gap-3 sm:gap-0">
+            <button
+              onClick={() => {
+                setShowChannelDialog(false);
+                setNewChannelName("");
+              }}
+              disabled={isCreatingChannel}
+              className="flex-1 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors font-medium disabled:opacity-50"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleCreateChannel}
+              disabled={isCreatingChannel || !newChannelName.trim()}
+              className="flex-1 px-4 py-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
+            >
+              {isCreatingChannel ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Создание...
+                </>
+              ) : (
+                <>
+                  <Hash size={16} />
+                  Создать канал
                 </>
               )}
             </button>

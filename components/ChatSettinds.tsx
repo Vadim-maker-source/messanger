@@ -35,11 +35,14 @@ import {
   Pin,
   Archive,
   LogOut,
-  Ban
+  Ban,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStatus } from "./StatusProvider";
-import { deleteChat } from "@/app/lib/api/chat";
+import { deleteChat, updateChat } from "@/app/lib/api/chat";
+import { uploadChatImage } from "@/app/lib/yandex-storage";
 import InviteManager from "./InviteManager";
 import {
   Dialog,
@@ -72,6 +75,50 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [memberActionDialog, setMemberActionDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(chat.imageUrl);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      let imageUrl = chat.imageUrl;
+
+      // Загружаем новое изображение, если оно выбрано
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        const uploadResult = await uploadChatImage(formData);
+        imageUrl = uploadResult?.url || imageUrl;
+      }
+
+      // Обновляем чат
+      await updateChat(chat.id, {
+        name: editedName,
+        imageUrl: imageUrl || undefined
+      });
+
+      setIsEditing(false);
+      router.refresh();
+    } catch (error) {
+      console.error("Error updating chat:", error);
+      alert(error instanceof Error ? error.message : "Ошибка при обновлении чата");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Если чат не найден, показываем красивую страницу 404
   if (!chat) {
@@ -442,21 +489,29 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
             ) : (
               <div className="relative">
                 <AvatarWithStatus
-                  src={chat.imageUrl}
+                  src={imagePreview}
                   name={chat.name || (isChannel ? "Канал" : isServer ? "Сервер" : "Группа")}
                   isOnline={false}
                   size="lg"
                   showStatus={false}
                 />
                 {isEditing && isAdmin && (
-                  <button
-                    onClick={() => document.getElementById("avatar-upload")?.click()}
-                    className="absolute bottom-0 right-0 p-3 bg-violet-500 rounded-full hover:bg-violet-600 transition-colors shadow-lg"
-                  >
-                    <Edit3 size={16} />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => document.getElementById("chat-avatar-upload")?.click()}
+                      className="absolute bottom-0 right-0 p-3 bg-violet-500 rounded-full hover:bg-violet-600 transition-colors shadow-lg"
+                    >
+                      <Camera size={16} />
+                    </button>
+                    <input
+                      id="chat-avatar-upload"
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                    />
+                  </>
                 )}
-                <input id="avatar-upload" type="file" className="hidden" accept="image/*" />
               </div>
             )}
 
@@ -478,20 +533,34 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
                 />
                 <div className="flex gap-3 mt-4">
                   <button
-                    onClick={() => setIsEditing(false)}
-                    className="flex-1 px-4 py-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors font-medium"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditedName(chat.name || "");
+                      setEditedDescription(chat.description || "");
+                      setImagePreview(chat.imageUrl);
+                      setImageFile(null);
+                    }}
+                    disabled={isSaving}
+                    className="flex-1 px-4 py-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors font-medium disabled:opacity-50"
                   >
                     Отмена
                   </button>
                   <button
-                    onClick={() => {
-                      // TODO: save changes
-                      setIsEditing(false);
-                    }}
-                    className="flex-1 px-4 py-3 bg-violet-500 rounded-2xl hover:bg-violet-600 transition-colors flex items-center justify-center gap-2 font-medium"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="flex-1 px-4 py-3 bg-violet-500 rounded-2xl hover:bg-violet-600 transition-colors flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
-                    <Save size={18} />
-                    Сохранить
+                    {isSaving ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Сохранение...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        Сохранить
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

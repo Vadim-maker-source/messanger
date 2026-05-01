@@ -1469,3 +1469,123 @@ export async function deleteChat(chatId: string) {
 
   return { success: true };
 }
+// --- ОБНОВЛЕНИЕ СЕРВЕРА ---
+export async function updateServer(serverId: string, data: { name?: string; imageUrl?: string; access?: string }) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    select: { ownerId: true }
+  });
+
+  if (!server) throw new Error("Server not found");
+  if (server.ownerId !== user.id) throw new Error("Only server owner can update server");
+
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
+  if (data.access !== undefined) updateData.access = data.access as AccessType;
+
+  const updatedServer = await prisma.server.update({
+    where: { id: serverId },
+    data: updateData
+  });
+
+  return updatedServer;
+}
+
+// --- СОЗДАНИЕ КАНАЛА НА СЕРВЕРЕ ---
+export async function createServerChannel(serverId: string, data: { name: string; type?: ChatType; access?: string }) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    include: {
+      members: {
+        select: { id: true }
+      }
+    }
+  });
+
+  if (!server) throw new Error("Server not found");
+  if (server.ownerId !== user.id) throw new Error("Only server owner can create channels");
+
+  // Создаем канал
+  const channel = await prisma.chat.create({
+    data: {
+      name: data.name,
+      type: data.type || "CHANNEL",
+      access: (data.access as AccessType) || server.access,
+      serverId: server.id,
+      users: {
+        connect: server.members.map(m => ({ id: m.id }))
+      }
+    }
+  });
+
+  // Создаем ChatMember для всех участников сервера
+  await Promise.all(
+    server.members.map(member =>
+      prisma.chatMember.create({
+        data: {
+          userId: member.id,
+          chatId: channel.id,
+          role: member.id === server.ownerId ? 'CREATOR' : 'MEMBER'
+        }
+      })
+    )
+  );
+
+  return channel;
+}
+
+// --- ОБНОВЛЕНИЕ ЧАТА ---
+export async function updateChat(chatId: string, data: { name?: string; imageUrl?: string; access?: string }) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const chat = await prisma.chat.findUnique({
+    where: { id: chatId },
+    include: {
+      server: true,
+      members: {
+        where: { userId: user.id },
+        select: { role: true }
+      }
+    }
+  });
+
+  if (!chat) throw new Error("Chat not found");
+
+  // Проверка прав на обновление
+  let canUpdate = false;
+
+  if (chat.type === "PRIVATE") {
+    throw new Error("Cannot update private chat");
+  } else if (chat.serverId) {
+    // Канал на сервере - только создатель сервера
+    canUpdate = chat.server?.ownerId === user.id;
+  } else {
+    // Обычная группа или канал - только создатель или админ
+    const userRole = chat.members[0]?.role;
+    canUpdate = userRole === 'CREATOR' || userRole === 'ADMIN';
+  }
+
+  if (!canUpdate) {
+    throw new Error("У вас нет прав на обновление этого чата");
+  }
+
+  const updateData: any = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
+  if (data.access !== undefined) updateData.access = data.access as AccessType;
+
+  const updatedChat = await prisma.chat.update({
+    where: { id: chatId },
+    data: updateData
+  });
+
+  return updatedChat;
+}
