@@ -1,25 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateInviteCode } from "@/app/lib/api/invite";
+import { generateInviteCode, generateServerInviteCode } from "@/app/lib/api/invite";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { chatId, maxUses, expiresAt } = body;
-    
-    console.log("Creating invite for chat:", chatId);
-    
-    if (!chatId) {
-      return NextResponse.json({ error: "Chat ID required" }, { status: 400 });
+    const { chatId, serverId, maxUses, expiresAt } = body;
+
+    if (!chatId && !serverId) {
+      return NextResponse.json({ error: "Chat ID or Server ID required" }, { status: 400 });
     }
-    
-    const invite = await generateInviteCode(
-      chatId, 
-      maxUses, 
-      expiresAt ? new Date(expiresAt) : undefined
-    );
-    
+
+    let invite;
+    if (serverId) {
+      console.log("Creating invite for server:", serverId);
+      invite = await generateServerInviteCode(
+        serverId,
+        maxUses,
+        expiresAt ? new Date(expiresAt) : undefined
+      );
+    } else if (chatId) {
+      console.log("Creating invite for chat:", chatId);
+      invite = await generateInviteCode(
+        chatId,
+        maxUses,
+        expiresAt ? new Date(expiresAt) : undefined
+      );
+    }
+
     console.log("Invite created:", invite);
-    
+
     return NextResponse.json(invite, { status: 201 });
   } catch (error: any) {
     console.error("Error creating invite:", error);

@@ -41,13 +41,52 @@ export async function generateInviteCode(chatId: string, maxUses?: number, expir
     throw new Error("Not authorized to create invites");
   }
 
-  const inviteCode = Math.random().toString(36).substring(2, 15) + 
+  const inviteCode = Math.random().toString(36).substring(2, 15) +
     Math.random().toString(36).substring(2, 8);
 
   const invite = await prisma.invite.create({
     data: {
       code: inviteCode,
       chatId: chat.id,
+      createdBy: user.id,
+      maxUses: maxUses || null,
+      expiresAt: expiresAt || null,
+      uses: 0
+    }
+  });
+
+  return invite;
+}
+
+// Генерация инвайт-кода для сервера
+export async function generateServerInviteCode(serverId: string, maxUses?: number, expiresAt?: Date) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findFirst({
+    where: {
+      id: serverId,
+      OR: [
+        { ownerId: user.id },
+        { members: { some: { id: user.id } } }
+      ]
+    }
+  });
+
+  if (!server) throw new Error("Server not found");
+
+  // Проверка прав (только владелец может создавать инвайты для сервера)
+  if (server.ownerId !== user.id) {
+    throw new Error("Not authorized to create invites for this server");
+  }
+
+  const inviteCode = Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 8);
+
+  const invite = await prisma.invite.create({
+    data: {
+      code: inviteCode,
+      serverId: server.id,
       createdBy: user.id,
       maxUses: maxUses || null,
       expiresAt: expiresAt || null,
@@ -65,6 +104,19 @@ export async function getChatInvites(chatId: string) {
 
   const invites = await prisma.invite.findMany({
     where: { chatId },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return invites;
+}
+
+// Получение всех инвайтов для сервера
+export async function getServerInvites(serverId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const invites = await prisma.invite.findMany({
+    where: { serverId },
     orderBy: { createdAt: 'desc' }
   });
 
