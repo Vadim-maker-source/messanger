@@ -2980,7 +2980,6 @@ const handleUploadFilesWithCaption = async () => {
   </DialogContent>
 </Dialog>
 
-{/* Drag & Drop Overlay */}
 <AnimatePresence>
   {isDraggingOver && (
     <motion.div

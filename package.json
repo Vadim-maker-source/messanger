@@ -13,6 +13,8 @@
     "@aws-sdk/client-s3": "^3.1016.0",
     "@aws-sdk/s3-request-presigner": "^3.1016.0",
     "@base-ui/react": "^1.4.1",
+    "@google/gemini-cli": "^0.40.1",
+    "@openrouter/sdk": "^0.12.25",
     "@prisma/client": "^6.18.0",
     "@types/simple-peer": "^9.11.9",
     "bcryptjs": "^3.0.3",
