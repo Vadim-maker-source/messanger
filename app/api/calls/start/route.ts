@@ -70,11 +70,31 @@ export async function POST(req: Request) {
     await Promise.all(
       chat.users
         .filter((u) => u.id !== user.id)
-        .map((u) => pusherServer.trigger(`user-${u.id}`, "incoming-call", payload)),
+        .map((u) => {
+          const chatNameForRecipient =
+            chat.name ||
+            chat.users.find((chatUser) => chatUser.id !== u.id)?.displayName ||
+            chat.users.find((chatUser) => chatUser.id !== u.id)?.username ||
+            "Личный чат";
+
+          return pusherServer.trigger(`user-${u.id}`, "incoming-call", {
+            ...payload,
+            chatName: chatNameForRecipient,
+          });
+        }),
     );
 
     // отправителю тоже (чтобы глобальный слой открыл исходящий звонок)
-    await pusherServer.trigger(`user-${user.id}`, "outgoing-call", payload);
+    const chatNameForCreator =
+      chat.name ||
+      chat.users.find((chatUser) => chatUser.id !== user.id)?.displayName ||
+      chat.users.find((chatUser) => chatUser.id !== user.id)?.username ||
+      "Личный чат";
+
+    await pusherServer.trigger(`user-${user.id}`, "outgoing-call", {
+      ...payload,
+      chatName: chatNameForCreator,
+    });
 
     return NextResponse.json({ callId, streamCallType: STREAM_CALL_TYPE });
   } catch (error: any) {
