@@ -30,6 +30,7 @@ model User {
   messages       Message[]
   chatMembers    ChatMember[]
   readReceipts   ReadReceipt[]
+  callsCreated   Call[]    @relation("CallsCreated")
   
   ownedServers   Server[]  @relation("ServerOwner")
   memberServers  Server[]  @relation("ServerMembers")
@@ -100,6 +101,19 @@ enum ChatRole {
   MEMBER
 }
 
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  MISSED
+  DECLINED
+}
+
 model Server {
   id          String     @id @default(cuid())
   name        String
@@ -135,12 +149,35 @@ model Chat {
   members     ChatMember[]
   messages    Message[]
   readReceipts ReadReceipt[]
+  calls       Call[]
   
   // Инвайты для чата
   invites     Invite[]   @relation("ChatInvites")
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt @default(now())
+}
+
+model Call {
+  id           String     @id @default(cuid())
+  chatId       String
+  chat         Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  createdById  String
+  createdBy    User       @relation("CallsCreated", fields: [createdById], references: [id], onDelete: Cascade)
+
+  type         CallType
+  status       CallStatus @default(RINGING)
+
+  // Stream Call identifier (e.g. "messanger:call_...")
+  streamCallId String     @unique
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([chatId])
+  @@index([createdById])
+  @@index([status])
 }
 
 model ChatMember {

@@ -16,6 +16,8 @@
     "@google/gemini-cli": "^0.40.1",
     "@openrouter/sdk": "^0.12.25",
     "@prisma/client": "^6.18.0",
+    "@stream-io/node-sdk": "^0.7.56",
+    "@stream-io/video-react-sdk": "^1.36.0",
     "@types/simple-peer": "^9.11.9",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

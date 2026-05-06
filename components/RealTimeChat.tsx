@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { 
-  Send, Paperclip, Mic, Video, X, Play, Pause, Volume2, 
+  Send, Paperclip, Mic, Video, Phone, X, Play, Pause, Volume2, 
   MoreVertical, ArrowLeft, MessageSquare, Reply, Forward, Edit, 
   Trash2, Smile, Check, Heart, ThumbsUp, Laugh, 
   Angry, Sparkles, AlertCircle, Search, ChevronRight, Loader2, 
@@ -38,8 +38,7 @@ import { useSettings } from "./SettingsProvider";
 import { canViewUserProfile, removeChatWallpaper, uploadChatWallpaper } from "@/app/lib/api/user";
 import Link from "next/link";
 import { createVKCall, createYandexCall } from "@/app/lib/api/calls";
-import { Peer } from "peerjs";
-import VideoCallModal from "./VideoCallModal";
+import { startStreamCall } from "@/app/lib/api/stream-calls";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 
@@ -1744,33 +1743,23 @@ const deleteSelectedMessages = async () => {
   return <p className="text-md wrap-break-word whitespace-pre-wrap">{message.content}</p>;
 };
 
-// Инициализация Peer только на клиенте
-
-const [isCallModalOpen, setIsCallModalOpen] = useState(false);
-const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
-const [incomingCall, setIncomingCall] = useState<any>(null);
-const [peer, setPeer] = useState<any>(null);
-const [myPeerId, setMyPeerId] = useState<string | null>(null);
-
-// Функция для начала звонка
-const startLocalVideoCall = () => {
-  if (!myPeerId) {
-    alert("Подключение...");
-    return;
+// Stream: старт звонка (глобальный слой поймает через Pusher)
+const startVideoCall = async () => {
+  try {
+    await startStreamCall(chatId, "video");
+    toast.success("Звонок создан");
+  } catch (e: any) {
+    toast.error(e?.message || "Не удалось начать звонок");
   }
-
-  sendMessage(chatId, `peerId=${myPeerId}`);
-
-  setRemotePeerId(null);
-  setIncomingCall(null);
-  setIsCallModalOpen(true);
 };
 
-// Функция для присоединения к звонку
-const joinCall = (incomingPeerId: string) => {
-  console.log("🔗 Присоединение к звонку, peerId:", incomingPeerId);
-  setRemotePeerId(incomingPeerId);
-  setIsCallModalOpen(true);
+const startAudioCall = async () => {
+  try {
+    await startStreamCall(chatId, "audio");
+    toast.success("Звонок создан");
+  } catch (e: any) {
+    toast.error(e?.message || "Не удалось начать звонок");
+  }
 };
 
 const renderMessage = (message: Message) => {
@@ -1778,8 +1767,8 @@ const renderMessage = (message: Message) => {
   const isSelected = selectedMessages.has(message.id);
   const displayName = isOwn ? "Вы" : (message.user.displayName || message.user.username);
   
-  const callMatch = message.content?.match(/peerId=([a-zA-Z0-9-_]+)/);
-  const incomingPeerId = callMatch ? callMatch[1] : null;
+  // старые peerjs-ссылки могут остаться в истории — показываем как текст
+  const incomingPeerId = null;
 
   return (
     <motion.div 
@@ -1868,14 +1857,7 @@ const renderMessage = (message: Message) => {
                 </div>
               </div>
               
-              {incomingPeerId && !isOwn && (
-                <button 
-                  onClick={() => joinCall(incomingPeerId)}
-                  className="w-full py-3 bg-green-500 hover:bg-green-600 active:scale-[0.97] rounded-xl text-xs font-black transition-all shadow-xl shadow-green-900/20 uppercase tracking-widest"
-                >
-                  Принять вызов
-                </button>
-              )}
+              {/* peerjs join removed */}
             </div>
           ) : (
             <div className="text-lg leading-relaxed break-words">
@@ -2548,9 +2530,12 @@ const handleUploadFilesWithCaption = async () => {
           
           <div className="flex gap-1">
           <div className="flex items-center gap-2">
-          <button onClick={startLocalVideoCall} className="p-2 hover:bg-white/10 rounded-full text-blue-400">
-        <Video size={20} />
-      </button>
+          <button onClick={startAudioCall} className="p-2 hover:bg-white/10 rounded-full text-green-400" title="Аудиозвонок">
+            <Phone size={20} />
+          </button>
+          <button onClick={startVideoCall} className="p-2 hover:bg-white/10 rounded-full text-blue-400" title="Видеозвонок">
+            <Video size={20} />
+          </button>
 </div>
             <button
               onClick={() => setIsSearchOpen(prev => !prev)}

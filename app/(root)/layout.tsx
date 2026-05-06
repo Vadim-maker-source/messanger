@@ -8,6 +8,7 @@ import { getCurrentUser } from "../lib/api/user";
 import { StatusProvider } from "@/components/StatusProvider";
 import { SettingsProvider } from "@/components/SettingsProvider";
 import { pusherClient } from "@/app/lib/pusher";
+import GlobalCallLayer from "@/components/GlobalCallLayer";
 
 interface SidebarItem {
   id: string;
@@ -111,6 +112,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <main className="flex-1 relative overflow-hidden">
                 <StatusProvider currentUserId={user?.id || ""}>
                     <SettingsProvider>
+                        {user?.id && (
+                            <GlobalCallLayer
+                                currentUser={{
+                                    id: user.id,
+                                    username: user.username,
+                                    displayName: user.displayName,
+                                    avatarUrl: user.avatarUrl,
+                                }}
+                            />
+                        )}
                         {children}
                     </SettingsProvider>
                 </StatusProvider>
