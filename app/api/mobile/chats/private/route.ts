@@ -1,44 +1,61 @@
-// app/api/mobile/chats/private/route.ts
-import { getOrCreatePrivateChat } from "@/app/lib/api/chat";
-import { verifyToken } from "@/app/lib/token";
+import { prisma } from "@/app/lib/prisma";
+import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    // Получаем токен из заголовка
-    const authHeader = request.headers.get("authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-    
-    if (!token) {
+    const currentUser = await getMobileUserFromRequest(request);
+    if (!currentUser) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized - No token" },
+        { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
-    
-    // Верифицируем токен
-    const payload = verifyToken(token);
-    if (!payload) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized - Invalid token" },
-        { status: 401 }
-      );
-    }
-    
+
     const body = await request.json();
     const { partnerId } = body;
-    
+
     if (!partnerId) {
       return NextResponse.json(
         { success: false, error: "partnerId required" },
         { status: 400 }
       );
     }
-    
-    // Создаем или получаем приватный чат
-    const chat = await getOrCreatePrivateChat(partnerId);
-    
-    // Форматируем ответ для мобильного приложения
+
+    if (partnerId === currentUser.id) {
+      return NextResponse.json(
+        { success: false, error: "Cannot create chat with yourself" },
+        { status: 400 }
+      );
+    }
+
+    let chat = await prisma.chat.findFirst({
+      where: {
+        type: "PRIVATE",
+        users: { some: { id: currentUser.id } },
+        AND: [{ users: { some: { id: partnerId } } }],
+      },
+    });
+
+    if (!chat) {
+      chat = await prisma.chat.create({
+        data: {
+          type: "PRIVATE",
+          users: {
+            connect: [{ id: currentUser.id }, { id: partnerId }],
+          },
+        },
+      });
+
+      await prisma.chatMember.createMany({
+        data: [
+          { userId: currentUser.id, chatId: chat.id, role: "CREATOR" },
+          { userId: partnerId, chatId: chat.id, role: "MEMBER" },
+        ],
+        skipDuplicates: true,
+      });
+    }
+
     const formattedChat = {
       id: chat.id,
       name: chat.name,

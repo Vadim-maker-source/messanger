@@ -88,10 +88,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         };
     }, [user?.id, loadSidebarData]);
 
-    const handleOpenCreate = (type: any) => {
-        setModalType(type);
-    };
-
     const handleCloseCreate = () => {
         setModalType(null);
         loadSidebarData();
@@ -128,7 +124,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </main>
 
             <CreateModal 
-                isOpen={!!modalType} 
+                isOpen={!!modalType}
                 onClose={handleCloseCreate} 
                 type={modalType} 
             />

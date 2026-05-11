@@ -49,7 +49,7 @@
 }
 
 body {
-  font-family: sans-serif;
+  font-family: Nunito, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 .no-select {
@@ -185,5 +185,56 @@ button {
   }
   html {
     @apply font-sans;
+  }
+}
+
+.gegga {
+  width: 0;
+}
+
+.snurra {
+  filter: url(#gegga);
+}
+
+.stopp1 {
+  stop-color: #B98CFF; /* light lavender */
+}
+
+.stopp2 {
+  stop-color: #6C3EF4; /* primary kyro purple */
+}
+
+.halvan {
+  animation: Snurra1 10s infinite linear;
+  stroke-dasharray: 180 800;
+  fill: none;
+  stroke: url(#gradient);
+  stroke-width: 23;
+  stroke-linecap: round;
+}
+
+.strecken {
+  animation: Snurra1 3s infinite linear;
+  stroke-dasharray: 26 54;
+  fill: none;
+  stroke: url(#gradient);
+  stroke-width: 23;
+  stroke-linecap: round;
+}
+
+.skugga {
+  filter: blur(8px);
+  opacity: 0.35;
+  position: absolute;
+  transform: translate(4px, 4px);
+}
+
+@keyframes Snurra1 {
+  0% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -403px;
   }
 }

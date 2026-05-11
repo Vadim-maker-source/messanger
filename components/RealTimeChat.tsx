@@ -41,6 +41,8 @@ import { createVKCall, createYandexCall } from "@/app/lib/api/calls";
 import { startStreamCall } from "@/app/lib/api/stream-calls";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import LoaderCreative from "./loader";
 
 type ChatRole = 'CREATOR' | 'ADMIN' | 'MEMBER';
 
@@ -2457,7 +2459,8 @@ const handleUploadFilesWithCaption = async () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="loader"></div>
+        {/* <div className="loader"></div> */}
+        <LoaderCreative />
       </div>
     );
   }

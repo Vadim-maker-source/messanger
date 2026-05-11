@@ -356,7 +356,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                   }`}
                 >
                   <div className="relative">
-                    <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center overflow-hidden">
+                    <div className="w-12 h-12 rounded-full bg-violet-600/20 flex items-center justify-center overflow-hidden">
                       {server.image ? (
                         <img src={server.image} className="w-full h-full object-cover" />
                       ) : (
@@ -364,7 +364,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                       )}
                     </div>
                   </div>
-                  <span className="flex-1 text-left text-sm font-medium text-white/80 truncate">
+                  <span className="flex-1 text-left text-lg font-medium text-white/80 truncate">
                     {server.title}
                   </span>
                   <ChevronRight
@@ -380,20 +380,20 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
 
           {/* Servers as icons when collapsed */}
           {servers.length > 0 && chatsWidth <= 100 && (
-            <div className="px-2 py-2 flex flex-col gap-2">
+            <div className="px-2 py-2 flex flex-col items-center gap-2">
               {servers.map((server) => (
                 <button
                   key={server.id}
                   onClick={() => handleServerClick(server)}
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
-                    expandedServer === server.id ? 'bg-violet-500/20 ring-2 ring-violet-500/50' : 'bg-violet-600/20 hover:bg-violet-600/30'
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                    expandedServer === server.id ? 'bg-violet-500/20 ring-4 ring-violet-500/50' : 'bg-violet-600/20 hover:bg-violet-600/30'
                   }`}
                   title={server.title}
                 >
                   {server.image ? (
-                    <img src={server.image} className="w-full h-full object-cover rounded-xl" />
+                    <img src={server.image} className="w-full h-full object-cover rounded-full" />
                   ) : (
-                    <span className="text-sm font-bold text-violet-400">#{server.title?.[0]}</span>
+                    <span className="text-lg font-bold text-violet-400">#{server.title?.[0]}</span>
                   )}
                 </button>
               ))}

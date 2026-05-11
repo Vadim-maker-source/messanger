@@ -1,40 +1,49 @@
-// app/api/mobile/chats/create/route.ts
-import { createChat } from "@/app/lib/api/chat";
-import { verifyToken } from "@/app/lib/token";
+import { prisma } from "@/app/lib/prisma";
+import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    // Получаем токен из заголовка
-    const authHeader = request.headers.get("authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-    
-    if (!token) {
+    const currentUser = await getMobileUserFromRequest(request);
+    if (!currentUser) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized - No token" },
+        { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
-    
-    // Верифицируем токен
-    const payload = verifyToken(token);
-    if (!payload) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized - Invalid token" },
-        { status: 401 }
-      );
-    }
-    
+
     const body = await request.json();
-    const { name, userIds, type, imageUrl, access } = body;
-    
-    // Создаем чат
-    const chat = await createChat({
-      name,
-      imageUrl,
-      access: access || "PUBLIC",
-      type: type || "GROUP",
-      userIds: userIds || []
+    const { name, userIds = [], imageUrl, access } = body;
+    if (!name || !String(name).trim()) {
+      return NextResponse.json(
+        { success: false, error: "name is required" },
+        { status: 400 }
+      );
+    }
+
+    const participants = Array.from(
+      new Set([currentUser.id, ...(Array.isArray(userIds) ? userIds : [])])
+    );
+
+    const chat = await prisma.chat.create({
+      data: {
+        name: String(name).trim(),
+        imageUrl: imageUrl || null,
+        access: access || "PUBLIC",
+        type: "GROUP",
+        users: {
+          connect: participants.map((id) => ({ id })),
+        },
+      },
+    });
+
+    await prisma.chatMember.createMany({
+      data: participants.map((userId) => ({
+        userId,
+        chatId: chat.id,
+        role: userId === currentUser.id ? "CREATOR" : "MEMBER",
+      })),
+      skipDuplicates: true,
     });
     
     return NextResponse.json({

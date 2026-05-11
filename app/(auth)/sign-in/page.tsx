@@ -60,11 +60,14 @@ export default function LoginPage() {
         style={{ backgroundColor: 'rgba(18, 18, 20, 0.95)' }} // fallback для старых браузеров
       >
         <div className="text-center mb-8 sm:mb-10">
-          <div className="w-16 h-16 bg-gradient-to-br from-violet-600/30 to-purple-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-violet-500/40 shadow-lg">
+          {/* <div className="w-16 h-16 bg-gradient-to-br from-violet-600/30 to-purple-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-violet-500/40 shadow-lg">
             <LogIn className="w-8 h-8 text-violet-400" />
+          </div> */}
+          <div>
+            <img src="/images/logo.png" alt="Logo" className="w-[60%] h-29 mx-auto" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
-            С возвращением
+            С возвращением!
           </h1>
           <p className="text-gray-400 mt-2 text-sm sm:text-base">
             Войди в свой аккаунт, чтобы продолжить общение
@@ -125,7 +128,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 transform active:scale-[0.99] shadow-lg shadow-violet-500/25 mt-6"
+            className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 transform active:scale-[0.99] mt-6"
           >
             {loading ? (
               <>
