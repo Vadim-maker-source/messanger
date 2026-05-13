@@ -32,7 +32,10 @@ export default async function ChatPage({ params }: { params: Promise<{ type: str
     }
   });
 
-  if (!chat) return <div className="p-10 text-white">Чат не найден (ID: {chatId})</div>;
+  if (!chat) return <div className="h-screen text-white flex flex-col items-center justify-center">
+    <img src="/images/mascot404.png" alt="404 Mascot" className="w-48 h-48" />
+    <h1 className="text-lg font-semibold">Чат не найден</h1>
+  </div>;
 
   const userRole = await getUserRoleInChat(chatId, user.id);
   const isServerAdmin = chat.serverId ? chat.server?.ownerId === user.id : false;

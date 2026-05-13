@@ -1,15 +1,15 @@
-// components/RealTimeChat.tsx
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { 
   Send, Paperclip, Mic, Video, Phone, X, Play, Pause, Volume2, 
   MoreVertical, ArrowLeft, MessageSquare, Reply, Forward, Edit, 
-  Trash2, Smile, Check, Heart, ThumbsUp, Laugh, 
-  Angry, Sparkles, AlertCircle, Search, ChevronRight, Loader2, 
-  Users, Crown, Shield, Info, Copy, Flag, Image, File,
-  Download, Eye,
-  CheckCheck
+  Trash2, Smile, Check, Search,
+  Users, Crown, Shield, Copy, Image, File,
+  Download,
+  CheckCheck,
+  Loader2,
+  Brush
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -37,12 +37,11 @@ import { useStatus } from "./StatusProvider";
 import { useSettings } from "./SettingsProvider";
 import { canViewUserProfile, removeChatWallpaper, uploadChatWallpaper } from "@/app/lib/api/user";
 import Link from "next/link";
-import { createVKCall, createYandexCall } from "@/app/lib/api/calls";
 import { startStreamCall } from "@/app/lib/api/stream-calls";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
-import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import LoaderCreative from "./loader";
+import ImageEditor from "./ImageEditor";
 
 type ChatRole = 'CREATOR' | 'ADMIN' | 'MEMBER';
 
@@ -140,15 +139,15 @@ const ImageMessage = ({ url }: { url: string }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
-  if (isOpen) {
-    document.body.style.overflow = 'hidden';
-  } else {
-    document.body.style.overflow = 'unset';
-  }
-  return () => {
-    document.body.style.overflow = 'unset';
-  };
-}, [isOpen]);
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setStartY(e.touches[0].clientY);
@@ -172,13 +171,11 @@ const ImageMessage = ({ url }: { url: string }) => {
 
   return (
     <>
-      <motion.img 
+      <img 
         src={url} 
         alt="message" 
-        className="max-w-90 max-h-90 min-w-75 w-auto h-auto rounded-lg cursor-pointer object-cover hover:opacity-90 transition-opacity"
+        className="max-w-90 max-h-90 min-w-75 w-auto h-auto rounded-tl-lg rounded-tr-lg cursor-pointer object-cover hover:opacity-90 transition-opacity block"
         onClick={() => setIsOpen(true)}
-        whileHover={{ scale: 1.02 }}
-        transition={{ duration: 0.2 }}
         loading="lazy"
       />
       
@@ -189,7 +186,7 @@ const ImageMessage = ({ url }: { url: string }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center cursor-pointer backdrop-blur-sm"
+            className="fixed inset-0 bg-black/60 z-200 flex items-center justify-center cursor-pointer backdrop-blur-sm"
             onClick={() => setIsOpen(false)}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
@@ -230,13 +227,11 @@ const ImageMessage = ({ url }: { url: string }) => {
                   />
                 </div>
               )}
-              <motion.img 
+              <img 
                 src={url} 
                 alt="fullscreen" 
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: isLoading ? 0 : 1 }}
-                transition={{ duration: 0.3 }}
+                style={{ opacity: isLoading ? 0 : 1 }}
                 onLoad={() => setIsLoading(false)}
                 draggable={false}
               />
@@ -276,7 +271,7 @@ const VideoMessage = ({ url }: { url: string }) => {
   };
 
   return (
-    <div className="relative rounded-lg overflow-hidden max-w-[300px] group">
+    <div className="relative rounded-lg overflow-hidden max-w-75 group">
       <video 
         ref={videoRef}
         src={url}
@@ -644,7 +639,7 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
   );
 };
 
-  const FileUploadModal = ({ 
+const FileUploadModal = ({ 
   isOpen, 
   onClose, 
   files, 
@@ -652,7 +647,8 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
   caption,
   onCaptionChange,
   onUpload,
-  isUploading 
+  isUploading,
+  onEditImage
 }: { 
   isOpen: boolean;
   onClose: () => void;
@@ -662,10 +658,10 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
   onCaptionChange: (value: string) => void;
   onUpload: () => void;
   isUploading: boolean;
+  onEditImage: (file: File, index: number) => void;
 }) => {
   const [previewUrls, setPreviewUrls] = useState<{ [key: number]: string }>({});
   
-  // Создаем превью для изображений при монтировании
   useEffect(() => {
     const urls: { [key: number]: string } = {};
     files.forEach((file, index) => {
@@ -675,13 +671,11 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
     });
     setPreviewUrls(urls);
     
-    // Очищаем URL при размонтировании
     return () => {
       Object.values(urls).forEach(url => URL.revokeObjectURL(url));
     };
   }, [files]);
   
-  // Форматирование размера файла
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -690,14 +684,10 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
   
-  // Получение иконки для файла
   const getFileIcon = (file: File) => {
-    if (file.type.startsWith('image/')) return null; // Для изображений показываем превью
+    if (file.type.startsWith('image/')) return null;
     if (file.type.startsWith('video/')) return "🎥";
     if (file.type.startsWith('audio/')) return "🎵";
-    if (file.type.includes('pdf')) return "📄";
-    if (file.type.includes('word')) return "📝";
-    if (file.type.includes('excel')) return "📊";
     return "📎";
   };
   
@@ -719,7 +709,6 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
             className="bg-[#121214] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-white/10"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
             <div className="p-5 border-b border-white/10 bg-gradient-to-r from-violet-500/10 to-purple-500/10">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <Paperclip size={20} className="text-violet-400" />
@@ -730,7 +719,6 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
               </p>
             </div>
             
-            {/* Files Preview */}
             <div className="p-5 max-h-[400px] overflow-y-auto custom-scrollbar">
               <div className="space-y-2 mb-4">
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-2">
@@ -744,14 +732,23 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
                     transition={{ delay: Math.min(index * 0.05, 0.3) }}
                     className="flex items-center gap-3 p-3 bg-white/5 rounded-xl group hover:bg-white/10 transition-colors"
                   >
-                    {/* Preview для изображений */}
+                    {/* Preview для изображений с возможностью редактирования */}
                     {file.type.startsWith('image/') && previewUrls[index] ? (
-                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-black/30 flex-shrink-0">
-                        <img 
-                          src={previewUrls[index]} 
-                          alt="preview" 
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="relative">
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-black/30 flex-shrink-0">
+                          <img 
+                            src={previewUrls[index]} 
+                            alt="preview" 
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <button
+                          onClick={() => onEditImage(file, index)}
+                          className="absolute -top-2 -right-2 p-1 bg-violet-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Редактировать изображение"
+                        >
+                          <Brush size={10} className="text-white" />
+                        </button>
                       </div>
                     ) : (
                       <div className="text-2xl w-12 h-12 flex items-center justify-center flex-shrink-0">
@@ -774,7 +771,6 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
                 ))}
               </div>
               
-              {/* Caption Input */}
               <div className="mt-4">
                 <label className="text-sm text-white/60 block mb-2">
                   Подпись к файлам
@@ -788,13 +784,9 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-violet-500 transition-colors resize-none placeholder:text-white/20"
                   autoFocus
                 />
-                <p className="text-xs text-white/30 mt-2">
-                  {caption ? `${caption.length}/500 символов` : "Подпись будет отображаться как основное сообщение"}
-                </p>
               </div>
             </div>
             
-            {/* Actions */}
             <div className="p-5 border-t border-white/10 flex gap-3">
               <button
                 onClick={onClose}
@@ -885,6 +877,11 @@ export default function RealTimeChat({
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [editingImageFile, setEditingImageFile] = useState<File | null>(null);
+  const [editingImageIndex, setEditingImageIndex] = useState<number>(-1);
+  const [editingImageUrl, setEditingImageUrl] = useState<string>("");
 
   // Хук для статуса онлайн
   const { getUserOnlineStatus, getFormattedLastSeen } = useStatus();
@@ -1712,11 +1709,12 @@ const deleteSelectedMessages = async () => {
   if (message.fileUrl) {
     switch (message.fileType) {
       case 'IMAGE':
-        return <div>
+        return (
+          <div>
             <ImageMessage url={message.fileUrl} />
-            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
+            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{message.content}</p>}
           </div>
-          ;
+        );
       case 'VIDEO': 
         return <VideoMessage url={message.fileUrl} />;
       case 'AUDIO': 
@@ -1724,25 +1722,22 @@ const deleteSelectedMessages = async () => {
       case 'ROUND': 
         return <RoundVideoMessage url={message.fileUrl} />;
       case 'FILE': 
-        return <div>
-            <FileMessage fileUrl={message.fileUrl} fileName={message.fileName} />
-            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
-          </div>
-          ;
-      default:
         return (
           <div>
-            <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-              Скачать файл
-            </a>
-            {message.content && <p className="text-lg wrap-break-word mt-1">{message.content}</p>}
+            <FileMessage fileUrl={message.fileUrl} fileName={message.fileName} />
+            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{message.content}</p>}
           </div>
         );
+      default:
+        // Если файл есть, но тип не распознан — показываем только текст с отступами
+        return message.content ? (
+          <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{message.content}</p>
+        ) : null;
     }
   }
   
-  // Если только текст
-  return <p className="text-md wrap-break-word whitespace-pre-wrap">{message.content}</p>;
+  // Если только текст — добавляем отступы px-4 py-2
+  return <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{message.content}</p>;
 };
 
 // Stream: старт звонка (глобальный слой поймает через Pusher)
@@ -1827,15 +1822,15 @@ const renderMessage = (message: Message) => {
         {/* Превью ответа (если есть) */}
         {renderReplyPreview(message)}
         
-        <div className={`rounded-2xl px-4 py-2 border shadow-lg ${
+        <div className={`rounded-2xl shadow-lg ${
           isOwn 
-            ? "bg-[#664471] text-white rounded-tr-none" 
+            ? "bg-[#664471] text-white" 
             : "bg-zinc-900/90 border-white/10 text-white"
         }`}>
-          {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
+          {/* {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
               border-t-[15px] border-t-[#664471] 
               border-r-[15px] border-r-transparent">
-          </div>}
+          </div>} */}
           
           {/* Имя отправителя в групповых чатах (для не-своих сообщений) */}
           {!isOwn && chatType !== "PRIVATE" && (
@@ -1868,7 +1863,7 @@ const renderMessage = (message: Message) => {
           )}
 
           {/* Футер сообщения: время, изменение, статус прочтения */}
-          <div className="flex items-center justify-end gap-2 mt-1">
+          <div className="flex items-center justify-end gap-2 mt-1 pb-2 px-4">
             <p className="text-[14px] text-white/40 font-medium">
               {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </p>
@@ -2244,15 +2239,38 @@ const handleRemoveFile = useCallback((index: number) => {
   setPendingFiles(prev => prev.filter((_, i) => i !== index));
 }, []);
 
-const handleCaptionChange = useCallback((value: string) => {
-  setFileCaption(value);
-}, []);
-
 const handleCloseModal = useCallback(() => {
   setShowFileUploadModal(false);
   setPendingFiles([]);
   setFileCaption("");
 }, []);
+
+const handleEditImage = (file: File, index: number) => {
+  const url = URL.createObjectURL(file);
+  setEditingImageUrl(url);
+  setEditingImageFile(file);
+  setEditingImageIndex(index);
+  setShowImageEditor(true);
+};
+
+const handleSaveEditedImage = (editedFile: File) => {
+  if (editingImageIndex >= 0) {
+    setPendingFiles(prev => {
+      const newFiles = [...prev];
+      newFiles[editingImageIndex] = editedFile;
+      return newFiles;
+    });
+  }
+  setShowImageEditor(false);
+  setEditingImageFile(null);
+  setEditingImageIndex(-1);
+  
+  // Очищаем старый URL
+  if (editingImageUrl) {
+    URL.revokeObjectURL(editingImageUrl);
+    setEditingImageUrl("");
+  }
+};
 
 // Функция загрузки файлов с подписью
 const handleUploadFilesWithCaption = async () => {
@@ -2285,9 +2303,6 @@ const handleUploadFilesWithCaption = async () => {
         continue;
       }
       
-      // Формируем текст сообщения
-      // Если есть подпись - используем её как основной текст
-      // Если нет подписи - отправляем пустую строку
       let messageContent = "";
 
       if (currentCaption) {
@@ -2468,20 +2483,26 @@ const handleUploadFilesWithCaption = async () => {
   return (
     <>
       <div
-        className="flex flex-col h-full bg-[#0a0a0c] bg-cover bg-center w-full"
-        style={{
-          backgroundImage: chatWallpaper
-            ? `linear-gradient(rgba(10,10,12,0.72), rgba(10,10,12,0.72)), url(${chatWallpaper})`
-            : "radial-gradient(circle at 20% 10%, rgba(125,74,180,0.35) 0%, rgba(10,10,12,0.1) 35%), radial-gradient(circle at 80% 70%, rgba(87,126,174,0.25) 0%, rgba(10,10,12,0.2) 45%), linear-gradient(135deg, #121218 0%, #0a0a0c 100%)"
-        }}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
+  className="flex flex-col h-full bg-[#0a0a0c] bg-cover bg-center w-full"
+  style={{
+    backgroundImage: chatWallpaper
+      ? `linear-gradient(rgba(10,10,12,0.72), rgba(10,10,12,0.72)), url(${chatWallpaper})`
+      : `
+        radial-gradient(circle at 20% 10%, rgba(125,74,180,0.35) 0%, rgba(10,10,12,0.1) 35%),
+        radial-gradient(circle at 80% 70%, rgba(87,126,174,0.25) 0%, rgba(10,10,12,0.2) 45%),
+        url(${window.innerWidth >= 768 
+          ? "/images/bgChatPc.png" 
+          : "/images/bgChatMobile.png"})
+      `
+  }}
+  onDragEnter={handleDragEnter}
+  onDragLeave={handleDragLeave}
+  onDragOver={handleDragOver}
+  onDrop={handleDrop}
+>
         <div className="w-full flex justify-center z-50">
         {/* Header */}
-        <div className="border border-white/10 backdrop-blur-sm bg-black/35 pt-3 pb-3 px-6 flex items-center justify-between w-full">
+        <div className="border-b border-white/10 backdrop-blur-sm bg-[#0f0f12] pt-3 pb-3 px-6 flex items-center justify-between w-full">
           <div className="flex items-center gap-3">
             <button onClick={() => router.back()} className="lg:hidden p-2 hover:bg-white/5 rounded-xl transition-colors">
               <ArrowLeft size={20} className="text-white/60" />
@@ -2503,9 +2524,6 @@ const handleUploadFilesWithCaption = async () => {
               <div>
                 <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                   {chatName || "Чат"}
-                  {isChannel && !canWrite && (
-                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-white/60">Только чтение</span>
-                  )}
                 </h2>
                 
                 {/* Статус пользователя для приватного чата */}
@@ -2682,16 +2700,21 @@ const handleUploadFilesWithCaption = async () => {
         >
           <div className="mt-32">
           {messages.length === 0 ? (
-            <div className="text-center text-white/40 py-10">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+            <div className="text-center text-white/40 py-10 flex flex-col items-center">
+              {/* <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
                 <MessageSquare size={32} className="text-white/20" />
+              </div> */}
+              <div className="w-48 h-48 mx-auto pb-4">
+                <img src="/images/mascotNoMessages.png" alt="No Messages Mascot" />
               </div>
-              <p className="text-sm">Нет сообщений</p>
+              <div className="mt-4">
+              <p className="text-sm mt-4">Нет сообщений</p>
               {isChannel && !canWrite ? (
                 <p className="text-xs mt-1">Только администраторы могут писать в этот канал</p>
               ) : (
                 <p className="text-xs mt-1">Напишите первое сообщение!</p>
               )}
+              </div>
             </div>
           ) : (
             messages.map(renderMessage)
@@ -2746,7 +2769,7 @@ const handleUploadFilesWithCaption = async () => {
         {/* Input */}
         {/* Input - показываем только если не в режиме выбора */}
 {!isSelectionMode ? (
-  <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/35 backdrop-blur-sm">
+  <form onSubmit={handleSendMessage} className={canWrite ? "p-4 border-t border-white/10 bg-black/35 backdrop-blur-sm" : ""}>
     <div className="flex gap-2 items-center">
       {!isChannel || (isChannel && canWrite) ? (
         <>
@@ -2826,11 +2849,11 @@ const handleUploadFilesWithCaption = async () => {
           <input ref={fileInputRef2} type="file" className="hidden" onChange={(e) => handleFileSelect(e, 'FILE')} />
         </>
       ) : (
-        <div className="flex-1 text-center text-white/40 text-sm py-2">
-          ⚡ Только администраторы могут писать в этот канал
-        </div>
+        // <div className="flex-1 text-center text-white/40 text-sm py-2">
+        // </div>
+        <></>
       )}
-      
+      {canWrite && (
       <button 
         type="submit" 
         disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite)}
@@ -2842,6 +2865,7 @@ const handleUploadFilesWithCaption = async () => {
           <Send size={20} />
         )}
       </button>
+      )}
     </div>
   </form>
 ) : (
@@ -2938,8 +2962,6 @@ const handleUploadFilesWithCaption = async () => {
     }}
   />
 )}
-        <AnimatePresence>
-</AnimatePresence>
 <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
   <DialogContent className="bg-[#121214] text-white w-full max-w-md sm:max-w-lg md:max-w-xl">
     <DialogHeader>
@@ -2994,6 +3016,15 @@ const handleUploadFilesWithCaption = async () => {
   )}
 </AnimatePresence>
 
+<ImageEditor
+  isOpen={showImageEditor}
+  imageUrl={editingImageUrl}
+  onClose={() => {
+    setShowImageEditor(false);
+    if (editingImageUrl) URL.revokeObjectURL(editingImageUrl);
+  }}
+  onSave={handleSaveEditedImage}
+/>
 <FileUploadModal 
   isOpen={showFileUploadModal}
   onClose={handleCloseModal}
@@ -3003,6 +3034,7 @@ const handleUploadFilesWithCaption = async () => {
   onCaptionChange={(value) => setFileCaption(value)}
   onUpload={handleUploadFilesWithCaption}
   isUploading={isUploadingFiles}
+  onEditImage={handleEditImage}  // Добавьте эту строку
 />
       </AnimatePresence>
     </>

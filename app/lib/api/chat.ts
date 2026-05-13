@@ -1187,14 +1187,6 @@ export async function sendMessage(
   // Для файлов без текста добавляем стандартное описание
   let finalContent = content;
   let finalFileName = fileName;
-  
-  if (fileUrl && !content?.trim()) {
-    if (fileType === 'IMAGE') finalContent = "📷 Фото";
-    else if (fileType === 'VIDEO') finalContent = "🎥 Видео";
-    else if (fileType === 'AUDIO') finalContent = "🎤 Голосовое сообщение";
-    else if (fileType === 'ROUND') finalContent = "📹 Видеосообщение";
-    else finalContent = "📎 Файл";
-  }
 
   const message = await prisma.message.create({
     data: {
