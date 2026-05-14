@@ -1824,7 +1824,7 @@ const renderMessage = (message: Message) => {
         
         <div className={`rounded-2xl shadow-lg ${
           isOwn 
-            ? "bg-[#664471] text-white" 
+            ? "bg-[#7166D8] text-white" 
             : "bg-zinc-900/90 border-white/10 text-white"
         }`}>
           {/* {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
@@ -2696,7 +2696,7 @@ const handleUploadFilesWithCaption = async () => {
         <div 
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/25"
+          className="flex-1 overflow-y-auto p-4 space-y-4"
         >
           <div className="mt-32">
           {messages.length === 0 ? (
@@ -2769,7 +2769,7 @@ const handleUploadFilesWithCaption = async () => {
         {/* Input */}
         {/* Input - показываем только если не в режиме выбора */}
 {!isSelectionMode ? (
-  <form onSubmit={handleSendMessage} className={canWrite ? "p-4 border-t border-white/10 bg-black/35 backdrop-blur-sm" : ""}>
+  <form onSubmit={handleSendMessage} className={canWrite ? "p-4" : ""}>
     <div className="flex gap-2 items-center">
       {!isChannel || (isChannel && canWrite) ? (
         <>
@@ -2777,9 +2777,9 @@ const handleUploadFilesWithCaption = async () => {
             <button 
               type="button" 
               onClick={() => setShowMediaMenu(!showMediaMenu)} 
-              className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+              className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors duration-200"
             >
-              <Paperclip size={20} className="text-white/60" />
+              <Paperclip size={28} className="text-white/60" />
             </button>
             <AnimatePresence>
               {showMediaMenu && (
@@ -2841,7 +2841,7 @@ const handleUploadFilesWithCaption = async () => {
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder={isRecording ? "Идет запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
             disabled={isSending || isRecording} 
-            className="flex-1 bg-white/5 rounded-xl px-4 py-2 text-white outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" 
+            className="flex-1 bg-white/5 rounded-full px-6 py-4 text-white outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" 
           />
           
           <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'IMAGE')} />
@@ -2857,12 +2857,12 @@ const handleUploadFilesWithCaption = async () => {
       <button 
         type="submit" 
         disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite)}
-        className="bg-orange-500 text-black p-2 rounded-xl hover:bg-orange-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="bg-[#7166D8] text-black p-3 rounded-full hover:bg-[#7166D8]/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSending ? (
-          <Loader2 className="animate-spin h-5 w-5" />
+          <Loader2 className="animate-spin h-7 w-7" />
         ) : (
-          <Send size={20} />
+          <Send size={28} />
         )}
       </button>
       )}
@@ -3034,7 +3034,7 @@ const handleUploadFilesWithCaption = async () => {
   onCaptionChange={(value) => setFileCaption(value)}
   onUpload={handleUploadFilesWithCaption}
   isUploading={isUploadingFiles}
-  onEditImage={handleEditImage}  // Добавьте эту строку
+  onEditImage={handleEditImage}
 />
       </AnimatePresence>
     </>
