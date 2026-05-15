@@ -26,6 +26,19 @@ export async function getOrCreatePrivateChat(partnerId: string) {
     throw new Error("Этот пользователь запретил личные сообщения");
   }
 
+  // Проверяем блокировку
+  try {
+    const [iBlocked, theyBlocked] = await Promise.all([
+      (prisma as any).block.findUnique({ where: { blockerId_blockedId: { blockerId: currentUser.id, blockedId: partnerId } } }),
+      (prisma as any).block.findUnique({ where: { blockerId_blockedId: { blockerId: partnerId, blockedId: currentUser.id } } }),
+    ]);
+    if (iBlocked) throw new Error("Вы заблокировали этого пользователя");
+    if (theyBlocked) throw new Error("Этот пользователь вас заблокировал");
+  } catch (e: any) {
+    if (e?.message?.includes("заблокировал")) throw e;
+    // Таблица ещё не создана — игнорируем
+  }
+
   // Ищем существующий приватный чат между этими двумя юзерами
   const existingChat = await prisma.chat.findFirst({
     where: {
@@ -176,15 +189,24 @@ export async function getUserSidebarData() {
         where: {
           chatId: chat.id,
           userId: { not: currentUser.id },
-          readReceipts: {
-            none: { userId: currentUser.id }
-          }
+          readReceipts: { none: { userId: currentUser.id } }
         }
       });
-
       return { ...chat, unreadCount };
     })
   );
+
+  // Загружаем предпочтения пользователя для чатов
+  const chatIds = allChats.map(c => c.id);
+  let prefsMap: Record<string, any> = {};
+  try {
+    const prefs = await (prisma as any).chatUserPreference.findMany({
+      where: { userId: currentUser.id, chatId: { in: chatIds } },
+    });
+    prefsMap = Object.fromEntries(prefs.map((p: any) => [p.chatId, p]));
+  } catch {
+    // Таблица ещё не создана — игнорируем
+  }
 
   // Форматируем чаты
   const formattedChats = chatsWithUnread.map(chat => {
@@ -229,9 +251,14 @@ export async function getUserSidebarData() {
       title: displayTitle,
       image: displayImage,
       lastMessage: lastMessageFormatted,
-      unreadCount: chat.unreadCount, // Только непрочитанные
+      unreadCount: chat.unreadCount,
       updatedAt: chat.updatedAt,
       isTyping: false,
+      isPinned: prefsMap[chat.id]?.isPinned ?? false,
+      isArchived: prefsMap[chat.id]?.isArchived ?? false,
+      isMuted: prefsMap[chat.id]?.isMuted ?? false,
+      pinnedAt: prefsMap[chat.id]?.pinnedAt ?? null,
+      partnerId: chat.type === "PRIVATE" ? (chat.users.find(u => u.id !== currentUser.id)?.id ?? null) : null,
     };
   });
 
@@ -302,9 +329,12 @@ export async function getUserSidebarData() {
 
   const allItems = [...formattedChats, ...formattedServers];
   
-  return allItems.sort((a, b) => 
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+  return allItems.sort((a, b) => {
+    const aPin = (a as any).isPinned ? 1 : 0;
+    const bPin = (b as any).isPinned ? 1 : 0;
+    if (bPin !== aPin) return bPin - aPin;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
 }
 
 export async function getChatMessagesWithStatus(chatId: string) {
@@ -1461,6 +1491,33 @@ export async function deleteChat(chatId: string) {
 
   return { success: true };
 }
+// Удалить чат только у себя (убрать себя из участников)
+export async function deleteChatForMe(chatId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const chat = await prisma.chat.findUnique({
+    where: { id: chatId },
+    select: { id: true, type: true, users: { select: { id: true } } }
+  });
+  if (!chat) throw new Error("Chat not found");
+
+  // Убираем пользователя из списка участников чата
+  await prisma.chat.update({
+    where: { id: chatId },
+    data: { users: { disconnect: { id: user.id } } }
+  });
+
+  // Удаляем предпочтения пользователя для этого чата
+  try {
+    await (prisma as any).chatUserPreference.deleteMany({
+      where: { userId: user.id, chatId }
+    });
+  } catch {}
+
+  return { success: true };
+}
+
 // --- ОБНОВЛЕНИЕ СЕРВЕРА ---
 export async function updateServer(serverId: string, data: { name?: string; imageUrl?: string; access?: string }) {
   const user = await getCurrentUser();
@@ -1611,4 +1668,47 @@ export async function deleteServer(serverId: string) {
   });
 
   return { success: true };
+}
+
+export async function setChatPreference(
+  chatId: string,
+  update: { isPinned?: boolean; isArchived?: boolean; isMuted?: boolean }
+) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  try {
+    return await (prisma as any).chatUserPreference.upsert({
+      where: { userId_chatId: { userId: user.id, chatId } },
+      update: {
+        ...update,
+        ...(update.isPinned !== undefined ? { pinnedAt: update.isPinned ? new Date() : null } : {})
+      },
+      create: {
+        userId: user.id,
+        chatId,
+        isPinned: update.isPinned ?? false,
+        isArchived: update.isArchived ?? false,
+        isMuted: update.isMuted ?? false,
+        pinnedAt: update.isPinned ? new Date() : null,
+      },
+    });
+  } catch (e: any) {
+    if (e?.code === 'P2021') {
+      // Таблица ещё не создана — игнорируем до применения миграции
+      return null;
+    }
+    throw e;
+  }
+}
+
+export async function getChatPreferences(chatIds: string[]) {
+  const user = await getCurrentUser();
+  if (!user) return {};
+
+  const prefs = await (prisma as any).chatUserPreference.findMany({
+    where: { userId: user.id, chatId: { in: chatIds } },
+  });
+
+  return Object.fromEntries(prefs.map((p: any) => [p.chatId, p]));
 }

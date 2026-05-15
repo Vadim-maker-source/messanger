@@ -1219,3 +1219,79 @@ export async function getUserMediaFiles(userId: string) {
     }))
   };
 }
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+
+  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  if (!user) throw new Error("Пользователь не найден");
+
+  const valid = await bcrypt.compare(currentPassword, user.hashedPassword || "");
+  if (!valid) throw new Error("Неверный текущий пароль");
+
+  if (newPassword.length < 6) throw new Error("Новый пароль должен быть минимум 6 символов");
+
+  const hashed = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({ where: { id: user.id }, data: { hashedPassword: hashed } });
+  return { success: true };
+}
+
+export async function deleteAccount(password: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) throw new Error("Не авторизован");
+
+  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  if (!user) throw new Error("Пользователь не найден");
+
+  const valid = await bcrypt.compare(password, user.hashedPassword || "");
+  if (!valid) throw new Error("Неверный пароль");
+
+  // Удаляем все данные пользователя
+  await prisma.readReceipt.deleteMany({ where: { userId: user.id } });
+  await prisma.message.deleteMany({ where: { userId: user.id } });
+  await prisma.chatMember.deleteMany({ where: { userId: user.id } });
+  await prisma.userSettings.deleteMany({ where: { userId: user.id } });
+  await prisma.user.delete({ where: { id: user.id } });
+
+  return { success: true };
+}
+
+
+export async function blockUser(targetId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  if (user.id === targetId) throw new Error("Cannot block yourself");
+
+  await (prisma as any).block.upsert({
+    where: { blockerId_blockedId: { blockerId: user.id, blockedId: targetId } },
+    update: {},
+    create: { blockerId: user.id, blockedId: targetId },
+  });
+  return { blocked: true };
+}
+
+export async function unblockUser(targetId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  await (prisma as any).block.deleteMany({
+    where: { blockerId: user.id, blockedId: targetId },
+  });
+  return { blocked: false };
+}
+
+export async function getBlockStatus(targetId: string): Promise<{ iBlockedThem: boolean; theyBlockedMe: boolean }> {
+  const user = await getCurrentUser();
+  if (!user) return { iBlockedThem: false, theyBlockedMe: false };
+
+  try {
+    const [iBlocked, theyBlocked] = await Promise.all([
+      (prisma as any).block.findUnique({ where: { blockerId_blockedId: { blockerId: user.id, blockedId: targetId } } }),
+      (prisma as any).block.findUnique({ where: { blockerId_blockedId: { blockerId: targetId, blockedId: user.id } } }),
+    ]);
+    return { iBlockedThem: !!iBlocked, theyBlockedMe: !!theyBlocked };
+  } catch {
+    return { iBlockedThem: false, theyBlockedMe: false };
+  }
+}

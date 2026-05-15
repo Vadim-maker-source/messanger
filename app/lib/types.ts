@@ -6,6 +6,7 @@ export interface SidebarItem {
     image: string | null;
     lastMessage: string;
     updatedAt: Date;
+    partnerId?: string | null;
 }
 
 export interface Message {

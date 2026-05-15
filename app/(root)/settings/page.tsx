@@ -4,641 +4,317 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Shield, Palette, Bell, MessageSquare, User, 
+import {
+  Shield, Palette, Bell, MessageSquare, User,
   ChevronRight, Save, X, Moon, Sun, Monitor,
-  Upload, Trash2, ImageIcon, Loader2, Download, Camera
+  Upload, Trash2, Loader2, Camera, Download, Check,
+  Eye, EyeOff, Lock, Globe, Users, Volume2, VolumeX,
+  Smartphone, Wifi, Image as ImageIcon
 } from "lucide-react";
-import { exportMyHistory, getOwnProfileEditorData, removeUserBackground, updateOwnProfile, uploadUserAvatar, uploadUserBackground } from "@/app/lib/api/user";
+import {
+  exportMyHistory, getOwnProfileEditorData, removeUserBackground,
+  updateOwnProfile, uploadUserAvatar, uploadUserBackground
+} from "@/app/lib/api/user";
 import { useSettings } from "@/components/SettingsProvider";
 import { SettingsType } from "@/app/lib/types";
 
-type SettingsTab = "privacy" | "appearance" | "notifications" | "chat" | "account";
+type Tab = "privacy" | "appearance" | "notifications" | "chat" | "account";
+
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: "privacy",       label: "Приватность",  icon: Shield },
+  { id: "appearance",    label: "Внешний вид",  icon: Palette },
+  { id: "notifications", label: "Уведомления",  icon: Bell },
+  { id: "chat",          label: "Чаты",         icon: MessageSquare },
+  { id: "account",       label: "Аккаунт",      icon: User },
+];
 
 export default function SettingsPage() {
   const router = useRouter();
   const { settings, isLoading, updateMultipleSettings } = useSettings();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("privacy");
-  const [unsavedChanges, setUnsavedChanges] = useState(false);
-  const [tempSettings, setTempSettings] = useState<SettingsType | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    displayName: "",
-    bio: "",
-    status: "",
-    telegram: "",
-    vk: "",
-    github: "",
-    website: ""
-  });
+  const [tab, setTab] = useState<Tab>("privacy");
+  const [dirty, setDirty] = useState(false);
+  const [temp, setTemp] = useState<SettingsType | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [profile, setProfile] = useState({ displayName: "", bio: "", status: "", telegram: "", vk: "", github: "", website: "" });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isExportingAllData, setIsExportingAllData] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // Синхронизируем tempSettings с settings из контекста
-  useEffect(() => {
-    if (settings) {
-      setTempSettings(settings);
-    }
-  }, [settings]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const avatarRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (settings) setTemp(settings); }, [settings]);
 
   useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const profileData = await getOwnProfileEditorData();
-        if (!profileData) return;
-        setProfileForm({
-          displayName: profileData.displayName || "",
-          bio: profileData.bio || "",
-          status: profileData.status || "",
-          telegram: profileData.socialLinks?.telegram || "",
-          vk: profileData.socialLinks?.vk || "",
-          github: profileData.socialLinks?.github || "",
-          website: profileData.socialLinks?.website || ""
-        });
-        setAvatarUrl(profileData.avatarUrl || null);
-      } catch (error) {
-        console.error("Failed to load profile editor data:", error);
-      }
-    };
-
-    loadProfile();
+    getOwnProfileEditorData().then(d => {
+      if (!d) return;
+      setProfile({
+        displayName: d.displayName || "", bio: d.bio || "", status: d.status || "",
+        telegram: d.socialLinks?.telegram || "", vk: d.socialLinks?.vk || "",
+        github: d.socialLinks?.github || "", website: d.socialLinks?.website || ""
+      });
+      setAvatarUrl(d.avatarUrl || null);
+    });
   }, []);
 
-  const handleSettingChange = <K extends keyof SettingsType>(key: K, value: SettingsType[K]) => {
-    setTempSettings(prev => prev ? { ...prev, [key]: value } : null);
-    setUnsavedChanges(true);
+  const set = <K extends keyof SettingsType>(k: K, v: SettingsType[K]) => {
+    setTemp(p => p ? { ...p, [k]: v } : null);
+    setDirty(true);
   };
 
-  const saveSettings = async () => {
-    if (!tempSettings || !unsavedChanges) return;
-    
-    try {
-      await updateMultipleSettings(tempSettings);
-      setUnsavedChanges(false);
-    } catch (error) {
-      console.error("Failed to save settings:", error);
-    }
+  const save = async () => {
+    if (!temp || !dirty) return;
+    setIsSaving(true);
+    try { await updateMultipleSettings(temp); setDirty(false); }
+    finally { setIsSaving(false); }
   };
 
-  const cancelChanges = () => {
-    setTempSettings(settings);
-    setUnsavedChanges(false);
-  };
-
-  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Можно загружать только изображения");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Размер файла не должен превышать 5MB");
-      return;
-    }
-
-    setIsUploading(true);
+    setIsUploadingBg(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      const result = await uploadUserBackground(formData);
-      if (result.success) {
-        setTempSettings(prev => prev ? { ...prev, chatBackground: result.url } : null);
-        await updateMultipleSettings({ chatBackground: result.url });
-        setUnsavedChanges(false);
-      }
-    } catch (error) {
-      console.error("Failed to upload background:", error);
-      alert("Ошибка при загрузке фона");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+      const fd = new FormData(); fd.append("file", file);
+      const r = await uploadUserBackground(fd);
+      if (r.success) { setTemp(p => p ? { ...p, chatBackground: r.url } : null); await updateMultipleSettings({ chatBackground: r.url }); setDirty(false); }
+    } finally { setIsUploadingBg(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
-  const handleRemoveBackground = async () => {
-    if (!confirm("Удалить фоновое изображение?")) return;
-    
-    setIsUploading(true);
-    try {
-      await removeUserBackground();
-      setTempSettings(prev => prev ? { ...prev, chatBackground: null } : null);
-      await updateMultipleSettings({ chatBackground: null });
-      setUnsavedChanges(false);
-    } catch (error) {
-      console.error("Failed to remove background:", error);
-      alert("Ошибка при удалении фона");
-    } finally {
-      setIsUploading(false);
-    }
+  const handleBgRemove = async () => {
+    setIsUploadingBg(true);
+    try { await removeUserBackground(); setTemp(p => p ? { ...p, chatBackground: null } : null); await updateMultipleSettings({ chatBackground: null }); setDirty(false); }
+    finally { setIsUploadingBg(false); }
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Можно загружать только изображения");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Размер файла не должен превышать 5MB");
-      return;
-    }
-
     setIsUploadingAvatar(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      const result = await uploadUserAvatar(formData);
-      if (result.success && result.url) {
-        setAvatarUrl(result.url);
-        alert("Аватар успешно обновлен!");
-      } else {
-        throw new Error("Failed to upload avatar");
-      }
-    } catch (error) {
-      console.error("Failed to upload avatar:", error);
-      alert("Ошибка при загрузке аватара");
-    } finally {
-      setIsUploadingAvatar(false);
-      if (avatarInputRef.current) avatarInputRef.current.value = "";
-    }
+      const fd = new FormData(); fd.append("file", file);
+      const r = await uploadUserAvatar(fd);
+      if (r.success && r.url) setAvatarUrl(r.url);
+    } finally { setIsUploadingAvatar(false); if (avatarRef.current) avatarRef.current.value = ""; }
   };
 
   const saveProfile = async () => {
+    setIsSavingProfile(true);
     try {
-      setIsSavingProfile(true);
-      await updateOwnProfile({
-        displayName: profileForm.displayName,
-        bio: profileForm.bio,
-        status: profileForm.status,
-        socialLinks: {
-          telegram: profileForm.telegram,
-          vk: profileForm.vk,
-          github: profileForm.github,
-          website: profileForm.website
-        }
-      });
-      alert("Профиль обновлен");
-    } catch (error) {
-      console.error("Failed to save profile:", error);
-      alert("Ошибка сохранения профиля");
-    } finally {
-      setIsSavingProfile(false);
-    }
+      await updateOwnProfile({ displayName: profile.displayName, bio: profile.bio, status: profile.status, socialLinks: { telegram: profile.telegram, vk: profile.vk, github: profile.github, website: profile.website } });
+    } finally { setIsSavingProfile(false); }
   };
 
-  const exportAllHistory = async () => {
+  const exportData = async () => {
+    setIsExporting(true);
     try {
-      setIsExportingAllData(true);
       const data = await exportMyHistory();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `my-data-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to export all data:", error);
-      alert("Ошибка выгрузки данных");
-    } finally {
-      setIsExportingAllData(false);
-    }
+      const a = document.createElement("a"); a.href = url; a.download = `my-data-${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } finally { setIsExporting(false); }
   };
 
-  if (isLoading || !tempSettings) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (isLoading || !temp) return (
+    <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white">
-      <div className="border-b border-white/5 bg-[#121214]/50 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-          >
-            <ChevronRight size={20} className="text-white/60 rotate-180" />
+    <div className="min-h-screen bg-[#0a0a0c] text-white flex flex-col">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-[#0f0f12]/80 backdrop-blur border-b border-white/5">
+        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
+          <button onClick={() => router.back()} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
+            <ChevronRight size={20} className="text-white/50 rotate-180" />
           </button>
-          <h1 className="text-lg font-semibold">Настройки</h1>
-          <div className="flex gap-2">
-            {unsavedChanges && (
-              <>
-                <button
-                  onClick={cancelChanges}
-                  className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                  title="Отменить"
-                >
-                  <X size={20} className="text-white/60" />
-                </button>
-                <button
-                  onClick={saveSettings}
-                  className="p-2 bg-orange-500 hover:bg-orange-600 rounded-xl transition-colors"
-                  title="Сохранить"
-                >
-                  <Save size={20} />
-                </button>
-              </>
+          <span className="font-semibold text-white/90">Настройки</span>
+          <div className="w-9 flex justify-end">
+            {dirty && (
+              <button onClick={save} disabled={isSaving} className="p-2 bg-violet-600 hover:bg-violet-500 rounded-xl transition-colors disabled:opacity-50">
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex gap-2 border-b border-white/10 mb-6 overflow-x-auto">
-          {[
-            { id: "privacy", label: "Приватность", icon: Shield },
-            { id: "appearance", label: "Внешний вид", icon: Palette },
-            { id: "notifications", label: "Уведомления", icon: Bell },
-            { id: "chat", label: "Чаты", icon: MessageSquare },
-            { id: "account", label: "Аккаунт", icon: User }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as SettingsTab)}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors relative ${
-                activeTab === tab.id ? "text-orange-400" : "text-white/40 hover:text-white/60"
-              }`}
-            >
-              <tab.icon size={16} />
-              {tab.label}
-              {activeTab === tab.id && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-400"
-                />
-              )}
+      <div className="max-w-3xl mx-auto w-full px-4 py-6 flex flex-col gap-6">
+        {/* Tab bar */}
+        <div className="flex gap-1 bg-white/5 rounded-2xl p-1">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium transition-all relative ${tab === t.id ? "text-white" : "text-white/40 hover:text-white/60"}`}>
+              {tab === t.id && <motion.div layoutId="tabBg" className="absolute inset-0 bg-violet-600/30 rounded-xl border border-violet-500/30" />}
+              <t.icon size={16} className="relative z-10" />
+              <span className="relative z-10 hidden sm:block">{t.label}</span>
             </button>
           ))}
         </div>
 
+        {/* Content */}
         <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.15 }}
-          >
-            {activeTab === "privacy" && (
-              <div className="space-y-6">
-                <SettingToggle
-                  label="Показывать статус «В сети»"
-                  description="Другие пользователи будут видеть, когда вы онлайн"
-                  value={tempSettings.showOnlineStatus ?? true}
-                  onChange={(v) => handleSettingChange("showOnlineStatus", v)}
-                />
-                <SettingToggle
-                  label="Показывать «Был(а) в сети»"
-                  description="Отображать время последнего посещения"
-                  value={tempSettings.showLastSeen ?? true}
-                  onChange={(v) => handleSettingChange("showLastSeen", v)}
-                />
-                <SettingSelect
-                  label="Кто может писать в личные сообщения"
-                  options={[
-                    { value: "everyone", label: "Все пользователи" },
-                    { value: "contacts", label: "Только контакты" },
-                    { value: "nobody", label: "Никто" }
-                  ]}
-                  value={tempSettings.allowDirectMessages ?? "everyone"}
-                  onChange={(v) => handleSettingChange("allowDirectMessages", v)}
-                />
-                <SettingSelect
-                  label="Кто может добавлять в чаты"
-                  options={[
-                    { value: "everyone", label: "Все пользователи" },
-                    { value: "contacts", label: "Только контакты" },
-                    { value: "nobody", label: "Никто" }
-                  ]}
-                  value={tempSettings.allowAddToChats ?? "everyone"}
-                  onChange={(v) => handleSettingChange("allowAddToChats", v)}
-                />
-                <SettingSelect
-                  label="Видимость профиля"
-                  options={[
-                    { value: "public", label: "Публичный" },
-                    { value: "contacts", label: "Только контакты" },
-                    { value: "private", label: "Приватный" }
-                  ]}
-                  value={tempSettings.profileVisibility ?? "public"}
-                  onChange={(v) => handleSettingChange("profileVisibility", v)}
-                />
-              </div>
-            )}
+          <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-3">
 
-            {activeTab === "appearance" && (
-              <div className="space-y-6">
-                <div className="p-4 bg-white/5 rounded-xl">
-                  <label className="block font-medium mb-3">Тема приложения</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { value: "light", label: "Светлая", icon: Sun },
-                      { value: "dark", label: "Тёмная", icon: Moon },
-                      { value: "system", label: "Системная", icon: Monitor }
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => handleSettingChange("theme", opt.value)}
-                        className={`p-3 rounded-lg text-sm transition-all flex flex-col items-center gap-1 ${
-                          tempSettings.theme === opt.value
-                            ? "bg-orange-500 text-white"
-                            : "bg-white/5 hover:bg-white/10 text-white/80"
-                        }`}
-                      >
-                        <opt.icon size={18} />
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+            {/* ── PRIVACY ── */}
+            {tab === "privacy" && <>
+              <Section title="Видимость">
+                <Toggle label="Статус «В сети»" desc="Другие видят, когда вы онлайн" icon={Eye} value={temp.showOnlineStatus ?? true} onChange={v => set("showOnlineStatus", v)} />
+                <Toggle label="Время последнего визита" desc="Показывать «был(а) в сети»" icon={EyeOff} value={temp.showLastSeen ?? true} onChange={v => set("showLastSeen", v)} />
+              </Section>
+              <Section title="Доступ">
+                <SelectRow label="Личные сообщения" icon={MessageSquare}
+                  options={[{ v: "everyone", l: "Все" }, { v: "contacts", l: "Контакты" }, { v: "nobody", l: "Никто" }]}
+                  value={temp.allowDirectMessages ?? "everyone"} onChange={v => set("allowDirectMessages", v)} />
+                <SelectRow label="Добавление в чаты" icon={Users}
+                  options={[{ v: "everyone", l: "Все" }, { v: "contacts", l: "Контакты" }, { v: "nobody", l: "Никто" }]}
+                  value={temp.allowAddToChats ?? "everyone"} onChange={v => set("allowAddToChats", v)} />
+                <SelectRow label="Видимость профиля" icon={Globe}
+                  options={[{ v: "public", l: "Публичный" }, { v: "contacts", l: "Контакты" }, { v: "private", l: "Приватный" }]}
+                  value={temp.profileVisibility ?? "public"} onChange={v => set("profileVisibility", v)} />
+              </Section>
+            </>}
+
+            {/* ── APPEARANCE ── */}
+            {tab === "appearance" && <>
+              <Section title="Тема">
+                <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+                  {[{ v: "light", l: "Светлая", I: Sun }, { v: "dark", l: "Тёмная", I: Moon }, { v: "system", l: "Системная", I: Monitor }].map(o => (
+                    <button key={o.v} onClick={() => set("theme", o.v)}
+                      className={`flex flex-col items-center gap-2 py-4 rounded-xl text-sm transition-all border ${temp.theme === o.v ? "bg-violet-600/20 border-violet-500/50 text-violet-300" : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"}`}>
+                      <o.I size={20} />
+                      {o.l}
+                    </button>
+                  ))}
                 </div>
-                
-                <SettingSelect
-                  label="Размер шрифта сообщений"
-                  options={[
-                    { value: "small", label: "Мелкий" },
-                    { value: "medium", label: "Средний" },
-                    { value: "large", label: "Крупный" }
-                  ]}
-                  value={tempSettings.messageFontSize ?? "medium"}
-                  onChange={(v) => handleSettingChange("messageFontSize", v)}
-                />
-                
-                <SettingColorPicker
-                  label="Акцентный цвет"
-                  value={tempSettings.accentColor || undefined}
-                  onChange={(v) => handleSettingChange("accentColor", v || null)}
-                />
-                
-                <div className="p-4 bg-white/5 rounded-xl">
-                  <label className="block font-medium mb-3">Фон чата</label>
-                  
-                  {tempSettings.chatBackground && (
-                    <div className="mb-4 rounded-xl overflow-hidden border border-white/10">
-                      <div 
-                        className="h-32 bg-cover bg-center relative"
-                        style={{ backgroundImage: `url(${tempSettings.chatBackground})` }}
-                      >
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={handleRemoveBackground}
-                            disabled={isUploading}
-                            className="px-3 py-1.5 bg-red-500 rounded-lg text-sm flex items-center gap-2"
-                          >
-                            <Trash2 size={14} />
-                            Удалить
-                          </button>
-                        </div>
+              </Section>
+              <Section title="Шрифт">
+                <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+                  {[{ v: "small", l: "Мелкий" }, { v: "medium", l: "Средний" }, { v: "large", l: "Крупный" }].map(o => (
+                    <button key={o.v} onClick={() => set("messageFontSize", o.v)}
+                      className={`py-3 rounded-xl text-sm transition-all border ${temp.messageFontSize === o.v ? "bg-violet-600/20 border-violet-500/50 text-violet-300" : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"}`}>
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+              <Section title="Фон чата">
+                <div className="px-4 pb-4 space-y-3">
+                  {temp.chatBackground && (
+                    <div className="relative h-28 rounded-xl overflow-hidden border border-white/10">
+                      <img src={temp.chatBackground} className="w-full h-full object-cover" alt="bg" />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <button onClick={handleBgRemove} disabled={isUploadingBg} className="flex items-center gap-2 px-3 py-1.5 bg-red-500/80 rounded-lg text-sm">
+                          <Trash2 size={14} /> Удалить
+                        </button>
                       </div>
                     </div>
                   )}
-                  
-                  <div className="flex gap-3">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleBackgroundUpload}
-                      className="hidden"
-                    />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors disabled:opacity-50"
-                    >
-                      {isUploading ? (
-                        <Loader2 size={18} className="animate-spin" />
-                      ) : (
-                        <Upload size={18} />
-                      )}
-                      {tempSettings.chatBackground ? "Изменить фон" : "Загрузить фон"}
-                    </button>
-                    
-                    {tempSettings.chatBackground && (
-                      <button
-                        onClick={() => window.open(tempSettings.chatBackground || "", "_blank")}
-                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors"
-                      >
-                        <ImageIcon size={18} />
-                      </button>
-                    )}
-                  </div>
-                  
-                  <p className="text-xs text-white/40 mt-3">
-                    Рекомендуемый размер: 1920x1080px. Максимальный размер: 5MB.
-                    Поддерживаются форматы: JPG, PNG, GIF, WEBP.
-                  </p>
+                  <input ref={fileRef} type="file" accept="image/*" onChange={handleBgUpload} className="hidden" />
+                  <button onClick={() => fileRef.current?.click()} disabled={isUploadingBg}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-white/70 transition-colors disabled:opacity-50">
+                    {isUploadingBg ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    {temp.chatBackground ? "Изменить фон" : "Загрузить фон"}
+                  </button>
+                  <p className="text-xs text-white/30">JPG, PNG, WEBP · до 5 МБ · рекомендуется 1920×1080</p>
                 </div>
-              </div>
-            )}
+              </Section>
+            </>}
 
-            {activeTab === "notifications" && (
-              <div className="space-y-6">
-                <SettingToggle
-                  label="Push-уведомления"
-                  description="Получать уведомления, когда приложение закрыто"
-                  value={tempSettings.pushNotifications ?? true}
-                  onChange={(v) => handleSettingChange("pushNotifications", v)}
-                />
-                <SettingToggle
-                  label="Звуковые уведомления"
-                  value={tempSettings.soundNotifications ?? true}
-                  onChange={(v) => handleSettingChange("soundNotifications", v)}
-                />
-                <SettingToggle
-                  label="Вибрация"
-                  value={tempSettings.vibration ?? true}
-                  onChange={(v) => handleSettingChange("vibration", v)}
-                />
-                <SettingToggle
-                  label="Предпросмотр сообщений"
-                  description="Показывать текст сообщения в уведомлении"
-                  value={tempSettings.showNotificationPreview ?? true}
-                  onChange={(v) => handleSettingChange("showNotificationPreview", v)}
-                />
-              </div>
-            )}
+            {/* ── NOTIFICATIONS ── */}
+            {tab === "notifications" && <>
+              <Section title="Уведомления">
+                <Toggle label="Push-уведомления" desc="Когда приложение закрыто" icon={Bell} value={temp.pushNotifications ?? true} onChange={v => set("pushNotifications", v)} />
+                <Toggle label="Звук" icon={Volume2} value={temp.soundNotifications ?? true} onChange={v => set("soundNotifications", v)} />
+                <Toggle label="Вибрация" icon={Smartphone} value={temp.vibration ?? true} onChange={v => set("vibration", v)} />
+                <Toggle label="Предпросмотр в уведомлении" desc="Показывать текст сообщения" icon={Eye} value={temp.showNotificationPreview ?? true} onChange={v => set("showNotificationPreview", v)} />
+              </Section>
+            </>}
 
-            {activeTab === "chat" && (
-              <div className="space-y-6">
-                <SettingToggle
-                  label="Отправлять отчёты о прочтении"
-                  description="Отправлять галочки ✓✓, когда вы прочитали сообщение"
-                  value={tempSettings.sendReadReceipts ?? true}
-                  onChange={(v) => handleSettingChange("sendReadReceipts", v)}
-                />
-                <SettingToggle
-                  label="Показывать индикатор набора"
-                  description="Отображать «печатает...», когда вы вводите сообщение"
-                  value={tempSettings.showTypingIndicator ?? true}
-                  onChange={(v) => handleSettingChange("showTypingIndicator", v)}
-                />
-                <SettingSelect
-                  label="Автозагрузка медиа"
-                  options={[
-                    { value: "always", label: "Всегда" },
-                    { value: "wifi", label: "Только через Wi-Fi" },
-                    { value: "never", label: "Никогда" }
-                  ]}
-                  value={tempSettings.autoDownloadMedia ?? "wifi"}
-                  onChange={(v) => handleSettingChange("autoDownloadMedia", v)}
-                />
-                <SettingToggle
-                  label="Сжимать изображения"
-                  description="Уменьшать размер фото перед отправкой"
-                  value={tempSettings.compressImages ?? true}
-                  onChange={(v) => handleSettingChange("compressImages", v)}
-                />
-              </div>
-            )}
+            {/* ── CHAT ── */}
+            {tab === "chat" && <>
+              <Section title="Поведение">
+                <Toggle label="Отчёты о прочтении" desc="Отправлять ✓✓ когда прочитали" icon={Check} value={temp.sendReadReceipts ?? true} onChange={v => set("sendReadReceipts", v)} />
+                <Toggle label="Индикатор набора" desc="Показывать «печатает…»" icon={MessageSquare} value={temp.showTypingIndicator ?? true} onChange={v => set("showTypingIndicator", v)} />
+                <Toggle label="Сжимать изображения" desc="Уменьшать фото перед отправкой" icon={ImageIcon} value={temp.compressImages ?? true} onChange={v => set("compressImages", v)} />
+              </Section>
+              <Section title="Загрузка медиа">
+                <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+                  {[{ v: "always", l: "Всегда", I: Download }, { v: "wifi", l: "Wi-Fi", I: Wifi }, { v: "never", l: "Никогда", I: VolumeX }].map(o => (
+                    <button key={o.v} onClick={() => set("autoDownloadMedia", o.v)}
+                      className={`flex flex-col items-center gap-2 py-3 rounded-xl text-sm transition-all border ${temp.autoDownloadMedia === o.v ? "bg-violet-600/20 border-violet-500/50 text-violet-300" : "bg-white/5 border-white/5 text-white/50 hover:bg-white/10"}`}>
+                      <o.I size={18} />
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+              </Section>
+            </>}
 
-            {activeTab === "account" && (
-              <div className="space-y-6">
-                <div className="bg-white/5 rounded-2xl p-6">
-                  <h4 className="font-medium mb-4 flex items-center gap-2">
-                    <User size={18} className="text-orange-400" />
-                    Профиль
-                  </h4>
-                  
-                  {/* Avatar Section */}
-                  <div className="flex flex-col items-center mb-6 pb-6 border-b border-white/10">
-                    <div className="relative mb-4">
-                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center overflow-hidden">
-                        {avatarUrl ? (
-                          <img 
-                            src={avatarUrl} 
-                            alt="Avatar" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User size={40} className="text-white/60" />
-                        )}
-                      </div>
-                      
-                      <input
-                        ref={avatarInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarUpload}
-                        className="hidden"
-                      />
-                      
-                      <button
-                        onClick={() => avatarInputRef.current?.click()}
-                        disabled={isUploadingAvatar}
-                        className="absolute bottom-0 right-0 p-2 bg-orange-500 hover:bg-orange-600 rounded-full transition-colors disabled:opacity-50"
-                        title="Изменить аватар"
-                      >
-                        {isUploadingAvatar ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Camera size={16} />
-                        )}
-                      </button>
+            {/* ── ACCOUNT ── */}
+            {tab === "account" && <>
+              <Section title="Аватар">
+                <div className="flex items-center gap-4 px-4 pb-4">
+                  <div className="relative shrink-0">
+                    <div className="w-20 h-20 rounded-full bg-violet-500/20 overflow-hidden flex items-center justify-center">
+                      {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" alt="avatar" /> : <User size={32} className="text-violet-400" />}
                     </div>
-                    <p className="text-sm text-white/60">Нажмите на иконку камеры, чтобы изменить аватар</p>
-                    <p className="text-xs text-white/40 mt-1">Рекомендуемый размер: 512x512px. Максимум: 5MB</p>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <input
-                      value={profileForm.displayName}
-                      onChange={(e) => setProfileForm(prev => ({ ...prev, displayName: e.target.value }))}
-                      placeholder="Имя отображения"
-                      className="w-full px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    />
-                    <input
-                      value={profileForm.status}
-                      onChange={(e) => setProfileForm(prev => ({ ...prev, status: e.target.value }))}
-                      placeholder="Статус"
-                      className="w-full px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    />
-                    <textarea
-                      value={profileForm.bio}
-                      onChange={(e) => setProfileForm(prev => ({ ...prev, bio: e.target.value }))}
-                      placeholder="О себе"
-                      rows={3}
-                      className="w-full px-3 py-2 bg-white/10 border border-white/10 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <input 
-                        value={profileForm.telegram} 
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, telegram: e.target.value }))} 
-                        placeholder="Telegram" 
-                        className="px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50" 
-                      />
-                      <input 
-                        value={profileForm.vk} 
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, vk: e.target.value }))} 
-                        placeholder="VK" 
-                        className="px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50" 
-                      />
-                      <input 
-                        value={profileForm.github} 
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, github: e.target.value }))} 
-                        placeholder="GitHub" 
-                        className="px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50" 
-                      />
-                      <input 
-                        value={profileForm.website} 
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, website: e.target.value }))} 
-                        placeholder="Сайт" 
-                        className="px-3 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50" 
-                      />
-                    </div>
-                    <button
-                      onClick={saveProfile}
-                      disabled={isSavingProfile}
-                      className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 rounded-xl transition-colors disabled:opacity-50 font-medium"
-                    >
-                      {isSavingProfile ? "Сохранение..." : "Сохранить профиль"}
+                    <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+                    <button onClick={() => avatarRef.current?.click()} disabled={isUploadingAvatar}
+                      className="absolute -bottom-1 -right-1 p-1.5 bg-violet-600 hover:bg-violet-500 rounded-full transition-colors disabled:opacity-50">
+                      {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
                     </button>
                   </div>
+                  <div className="text-sm text-white/40">
+                    <p>Нажмите на иконку камеры</p>
+                    <p>512×512 · до 5 МБ</p>
+                  </div>
                 </div>
-                
-                <div className="bg-white/5 rounded-2xl p-6">
-                  <h4 className="font-medium mb-4 flex items-center gap-2">
-                    <Shield size={18} className="text-orange-400" />
-                    Безопасность
-                  </h4>
-                  <button className="w-full text-left p-3 hover:bg-white/5 rounded-xl transition-colors flex items-center justify-between">
-                    <span className="text-white/80">Сменить пароль</span>
-                    <ChevronRight size={16} className="text-white/40" />
-                  </button>
-                  <button
-                    onClick={exportAllHistory}
-                    disabled={isExportingAllData}
-                    className="w-full text-left p-3 hover:bg-white/5 rounded-xl transition-colors text-white/80 flex items-center justify-between"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Download size={16} /> 
-                      Выгрузить мои данные
-                    </span>
-                    <span className="text-xs text-white/40">{isExportingAllData ? "..." : "JSON"}</span>
-                  </button>
-                  <button className="w-full text-left p-3 hover:bg-red-500/10 rounded-xl transition-colors text-red-400">
-                    Удалить аккаунт
+              </Section>
+
+              <Section title="Профиль">
+                <div className="px-4 pb-4 space-y-2">
+                  <input value={profile.displayName} onChange={e => setProfile(p => ({ ...p, displayName: e.target.value }))}
+                    placeholder="Имя" className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-violet-500/50 transition-colors" />
+                  <input value={profile.status} onChange={e => setProfile(p => ({ ...p, status: e.target.value }))}
+                    placeholder="Статус" className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-violet-500/50 transition-colors" />
+                  <textarea value={profile.bio} onChange={e => setProfile(p => ({ ...p, bio: e.target.value }))}
+                    placeholder="О себе" rows={3} className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm resize-none focus:outline-none focus:border-violet-500/50 transition-colors" />
+                  <div className="grid grid-cols-2 gap-2">
+                    {[["telegram", "Telegram"], ["vk", "VK"], ["github", "GitHub"], ["website", "Сайт"]].map(([k, ph]) => (
+                      <input key={k} value={(profile as any)[k]} onChange={e => setProfile(p => ({ ...p, [k]: e.target.value }))}
+                        placeholder={ph} className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-violet-500/50 transition-colors" />
+                    ))}
+                  </div>
+                  <button onClick={saveProfile} disabled={isSavingProfile}
+                    className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    {isSavingProfile ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    Сохранить профиль
                   </button>
                 </div>
-              </div>
-            )}
+              </Section>
+
+              <Section title="Данные и безопасность">
+                <button onClick={exportData} disabled={isExporting}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-sm text-white/70">
+                  <span className="flex items-center gap-3"><Download size={16} className="text-violet-400" /> Выгрузить мои данные</span>
+                  <span className="text-xs text-white/30">{isExporting ? "..." : "JSON"}</span>
+                </button>
+                <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors text-sm text-white/70">
+                  <span className="flex items-center gap-3"><Lock size={16} className="text-violet-400" /> Сменить пароль</span>
+                  <ChevronRight size={14} className="text-white/20" />
+                </button>
+                <div className="h-px bg-white/5 mx-4" />
+                <button className="w-full flex items-center px-4 py-3 hover:bg-red-500/5 transition-colors text-sm text-red-400/80">
+                  <Trash2 size={16} className="mr-3" /> Удалить аккаунт
+                </button>
+              </Section>
+            </>}
+
           </motion.div>
         </AnimatePresence>
       </div>
@@ -646,72 +322,46 @@ export default function SettingsPage() {
   );
 }
 
-// Вспомогательные компоненты
-function SettingToggle({ label, description, value, onChange }: { label: string; description?: string; value: boolean; onChange: (v: boolean) => void }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors">
-      <div>
-        <p className="font-medium">{label}</p>
-        {description && <p className="text-sm text-white/40">{description}</p>}
-      </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative w-12 h-7 rounded-full transition-colors ${value ? "bg-orange-500" : "bg-white/20"}`}
-      >
-        <motion.div
-          className="absolute top-1 w-5 h-5 bg-white rounded-full shadow"
-          animate={{ left: value ? "28px" : "4px" }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        />
-      </button>
+    <div className="bg-[#111114] border border-white/5 rounded-2xl overflow-hidden">
+      <p className="px-4 pt-4 pb-2 text-xs font-semibold text-white/30 uppercase tracking-wider">{title}</p>
+      {children}
     </div>
   );
 }
 
-function SettingSelect({ label, options, value, onChange }: { label: string; options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) {
+function Toggle({ label, desc, icon: Icon, value, onChange }: { label: string; desc?: string; icon: React.ElementType; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="p-4 bg-white/5 rounded-xl">
-      <label className="block font-medium mb-3">{label}</label>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={`p-3 rounded-lg text-sm transition-all ${
-              value === opt.value ? "bg-orange-500 text-white" : "bg-white/5 hover:bg-white/10 text-white/80"
-            }`}
-          >
-            {opt.label}
+    <button onClick={() => onChange(!value)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left">
+      <Icon size={16} className={value ? "text-violet-400" : "text-white/25"} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-white/80">{label}</p>
+        {desc && <p className="text-xs text-white/30 mt-0.5">{desc}</p>}
+      </div>
+      <div className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${value ? "bg-violet-600" : "bg-white/15"}`}>
+        <motion.div className="absolute top-1 w-4 h-4 bg-white rounded-full shadow"
+          animate={{ left: value ? "22px" : "4px" }}
+          transition={{ type: "spring", stiffness: 500, damping: 30 }} />
+      </div>
+    </button>
+  );
+}
+
+function SelectRow({ label, icon: Icon, options, value, onChange }: { label: string; icon: React.ElementType; options: { v: string; l: string }[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="px-4 py-3 border-b border-white/5 last:border-0">
+      <div className="flex items-center gap-3 mb-2">
+        <Icon size={16} className="text-violet-400 shrink-0" />
+        <p className="text-sm text-white/80">{label}</p>
+      </div>
+      <div className="flex gap-1.5 ml-7">
+        {options.map(o => (
+          <button key={o.v} onClick={() => onChange(o.v)}
+            className={`flex-1 py-1.5 rounded-lg text-xs transition-all border ${value === o.v ? "bg-violet-600/25 border-violet-500/40 text-violet-300" : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10"}`}>
+            {o.l}
           </button>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function SettingColorPicker({ label, value, onChange }: { label: string; value?: string; onChange: (v?: string) => void }) {
-  return (
-    <div className="p-4 bg-white/5 rounded-xl">
-      <label className="block font-medium mb-3">{label}</label>
-      <div className="flex items-center gap-4">
-        <input
-          type="color"
-          value={value || "#FF6B35"}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-12 h-12 rounded-lg cursor-pointer border-0"
-        />
-        <input
-          type="text"
-          value={value || ""}
-          placeholder="#FF6B35"
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 px-4 py-2 bg-white/10 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-        />
-        {value && (
-          <button onClick={() => onChange(undefined)} className="p-2 text-white/40 hover:text-white/60">
-            <X size={16} />
-          </button>
-        )}
       </div>
     </div>
   );

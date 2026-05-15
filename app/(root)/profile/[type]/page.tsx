@@ -30,7 +30,7 @@ import {
   ChevronLeft
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { exportHistoryWithUser, getCurrentUser, getUserProfile, getUserMediaFiles } from "@/app/lib/api/user";
+import { exportHistoryWithUser, getCurrentUser, getUserProfile, getUserMediaFiles, blockUser, unblockUser, getBlockStatus } from "@/app/lib/api/user";
 import { getOrCreatePrivateChat } from "@/app/lib/api/chat";
 import { useStatus } from "@/components/StatusProvider";
 
@@ -97,6 +97,8 @@ export default function UserProfilePage() {
   const [mediaTab, setMediaTab] = useState<"photos" | "videos" | "files" | "audio">("photos");
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number>(0);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [isBlockLoading, setIsBlockLoading] = useState(false);
 
   // Функции для модалки медиа
   const openMediaModal = (media: any, index: number) => {
@@ -157,6 +159,10 @@ export default function UserProfilePage() {
         if (userData) {
           setUser(userData as UserProfile);
           setIsOwnProfile(current?.id === userData.id);
+          if (current && current.id !== userData.id) {
+            const blockStatus = await getBlockStatus(userData.id);
+            setIBlockedThem(blockStatus.iBlockedThem);
+          }
         }
       } catch (error) {
         console.error("Error loading profile:", error);
@@ -388,13 +394,37 @@ export default function UserProfilePage() {
               </div>
 
               {!isOwnProfile && (
-                <div className="flex justify-center md:justify-start gap-3 mt-6">
+                <div className="flex justify-center md:justify-start gap-3 mt-6 flex-wrap">
                   <button
                     onClick={startChat}
                     className="px-6 py-2 bg-violet-500 hover:bg-violet-600 rounded-xl font-medium transition-all flex items-center gap-2"
                   >
                     <MessageSquare size={18} />
                     Написать сообщение
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setIsBlockLoading(true);
+                      try {
+                        if (iBlockedThem) {
+                          await unblockUser(user.id);
+                          setIBlockedThem(false);
+                        } else {
+                          await blockUser(user.id);
+                          setIBlockedThem(true);
+                        }
+                      } finally {
+                        setIsBlockLoading(false);
+                      }
+                    }}
+                    disabled={isBlockLoading}
+                    className={`px-6 py-2 rounded-xl font-medium transition-all flex items-center gap-2 disabled:opacity-50 ${
+                      iBlockedThem
+                        ? "bg-white/10 hover:bg-white/20 text-white"
+                        : "bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                    }`}
+                  >
+                    {iBlockedThem ? "Разблокировать" : "Заблокировать"}
                   </button>
                 </div>
               )}

@@ -5,7 +5,6 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -195,6 +194,33 @@ model ChatMember {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, chatId])
+}
+
+model Block {
+  id          String   @id @default(cuid())
+  blockerId   String
+  blockedId   String
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model ChatUserPreference {
+  id         String   @id @default(cuid())
+  userId     String
+  chatId     String
+  isPinned   Boolean  @default(false)
+  isArchived Boolean  @default(false)
+  isMuted    Boolean  @default(false)
+  pinnedAt   DateTime?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, chatId])
+  @@index([userId])
 }
 
 model Message {

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { 
-  Send, Paperclip, Mic, Video, Phone, X, Play, Pause, Volume2, 
+  Send, Paperclip, Mic, Video, Phone, X, Play, Pause, 
   MoreVertical, ArrowLeft, MessageSquare, Reply, Forward, Edit, 
   Trash2, Smile, Check, Search,
   Users, Crown, Shield, Copy, Image, File,
@@ -35,7 +35,7 @@ import { uploadChatImage } from "@/app/lib/yandex-storage";
 import { useRouter } from "next/navigation";
 import { useStatus } from "./StatusProvider";
 import { useSettings } from "./SettingsProvider";
-import { canViewUserProfile, removeChatWallpaper, uploadChatWallpaper } from "@/app/lib/api/user";
+import { canViewUserProfile, removeChatWallpaper, uploadChatWallpaper, blockUser, unblockUser, getBlockStatus } from "@/app/lib/api/user";
 import Link from "next/link";
 import { startStreamCall } from "@/app/lib/api/stream-calls";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -291,54 +291,151 @@ const VideoMessage = ({ url }: { url: string }) => {
   );
 };
 
-// Компонент для аудио
+// Компонент для аудио с визуализацией амплитуды
 const AudioMessage = ({ url }: { url: string }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [staticBars, setStaticBars] = useState<number[]>([]);
+  const [liveBars, setLiveBars] = useState<number[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const BAR_COUNT = 40;
 
-  const togglePlay = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
+  // Декодируем реальную форму волны
+  useEffect(() => {
+    let cancelled = false;
+    fetch(url)
+      .then(r => r.arrayBuffer())
+      .then(buf => new OfflineAudioContext(1, 1, 44100).decodeAudioData(buf))
+      .then(decoded => {
+        if (cancelled) return;
+        const data = decoded.getChannelData(0);
+        const step = Math.floor(data.length / BAR_COUNT);
+        const bars = Array.from({ length: BAR_COUNT }, (_, i) => {
+          let sum = 0;
+          for (let j = 0; j < step; j++) sum += Math.abs(data[i * step + j] || 0);
+          return sum / step;
+        });
+        const max = Math.max(...bars, 0.001);
+        setStaticBars(bars.map(v => v / max));
+      })
+      .catch(() => { if (!cancelled) setStaticBars(Array(BAR_COUNT).fill(0.3)); });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  // Lazy-init AudioContext при первом play (нужен user gesture)
+  const ensureAudioContext = () => {
+    const el = audioRef.current;
+    if (!el) return false;
+    if (ctxRef.current) {
+      if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+      return true;
+    }
+    // Проверяем не подключён ли уже (StrictMode)
+    if ((el as any).__audioCtxDone) {
+      ctxRef.current = (el as any).__audioCtxRef;
+      analyserRef.current = (el as any).__analyserRef;
+      if (ctxRef.current?.state === 'suspended') ctxRef.current.resume();
+      return true;
+    }
+    try {
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 128;
+      ctx.createMediaElementSource(el).connect(analyser);
+      analyser.connect(ctx.destination);
+      ctxRef.current = ctx;
+      analyserRef.current = analyser;
+      (el as any).__audioCtxDone = true;
+      (el as any).__audioCtxRef = ctx;
+      (el as any).__analyserRef = analyser;
+      return true;
+    } catch (e) {
+      console.warn('AudioContext:', e);
+      return false;
     }
   };
+
+  const drawBars = () => {
+    if (!analyserRef.current) return;
+    const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteFrequencyData(data);
+    const step = Math.floor(data.length / BAR_COUNT);
+    setLiveBars(Array.from({ length: BAR_COUNT }, (_, i) => data[i * step] / 255));
+    animFrameRef.current = requestAnimationFrame(drawBars);
+  };
+
+  const togglePlay = async () => {
+    if (!audioRef.current) return;
+    ensureAudioContext();
+    if (isPlaying) {
+      audioRef.current.pause();
+      cancelAnimationFrame(animFrameRef.current);
+      setLiveBars([]);
+    } else {
+      await audioRef.current.play();
+      drawBars();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  useEffect(() => () => cancelAnimationFrame(animFrameRef.current), []);
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const percent = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-      setProgress(percent);
-    }
+    if (!audioRef.current) return;
+    const ct = audioRef.current.currentTime;
+    const dur = audioRef.current.duration || 1;
+    setCurrentTime(ct);
+    setProgress((ct / dur) * 100);
   };
 
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    audioRef.current.currentTime = (e.clientX - rect.left) / rect.width * (audioRef.current.duration || 0);
+  };
+
+  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const displayBars = liveBars.length ? liveBars : staticBars;
+
   return (
-    <div className="bg-white/10 rounded-lg p-3 min-w-[250px]">
-      <audio 
-        ref={audioRef} 
-        src={url} 
+    <div className="bg-white/10 rounded-xl p-3 min-w-[260px]">
+      <audio
+        ref={audioRef}
+        src={url}
         onTimeUpdate={handleTimeUpdate}
-        onEnded={() => setIsPlaying(false)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+        onEnded={() => { setIsPlaying(false); setProgress(0); setCurrentTime(0); setLiveBars([]); cancelAnimationFrame(animFrameRef.current); }}
       />
       <div className="flex items-center gap-3">
         <button
           onClick={togglePlay}
-          className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center hover:bg-orange-600 transition-colors"
+          className="w-9 h-9 rounded-full bg-violet-600 hover:bg-violet-500 flex items-center justify-center shrink-0 transition-colors"
         >
-          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          {isPlaying ? <Pause size={16} className="text-white" /> : <Play size={16} className="text-white ml-0.5" />}
         </button>
-        <div className="flex-1">
-          <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-orange-500 transition-all duration-100"
-              style={{ width: `${progress}%` }}
-            />
+        <div className="flex-1 flex flex-col gap-1">
+          <div className="flex items-end gap-[2px] h-8 cursor-pointer" onClick={handleSeek}>
+            {displayBars.map((h, i) => {
+              const filled = (i / BAR_COUNT) * 100 <= progress;
+              return (
+                <div
+                  key={i}
+                  className={`flex-1 rounded-full transition-all duration-75 ${filled ? 'bg-violet-400' : 'bg-white/25'}`}
+                  style={{ height: `${Math.max(10, h * 100)}%` }}
+                />
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-[10px] text-white/40">
+            <span>{fmtTime(currentTime)}</span>
+            <span>{fmtTime(duration)}</span>
           </div>
         </div>
-        <Volume2 size={16} className="text-white/60" />
       </div>
     </div>
   );
@@ -836,8 +933,11 @@ export default function RealTimeChat({
   const [isSending, setIsSending] = useState(false);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingType, setRecordingType] = useState<'audio' | 'video' | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [pendingAudioBlob, setPendingAudioBlob] = useState<Blob | null>(null);
+  const [recordingAmplitude, setRecordingAmplitude] = useState<number[]>([]);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
@@ -860,6 +960,9 @@ export default function RealTimeChat({
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [isChangingWallpaper, setIsChangingWallpaper] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [theyBlockedMe, setTheyBlockedMe] = useState(false);
+  const [isBlockLoading, setIsBlockLoading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -871,6 +974,11 @@ export default function RealTimeChat({
   const isSubscribed = useRef(false);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const recordingAnalyserRef = useRef<AnalyserNode | null>(null);
+  const recordingAudioCtxRef = useRef<AudioContext | null>(null);
+  const recordingAnimFrameRef = useRef<number>(0);
+  const recordingChunksRef = useRef<Blob[]>([]);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { settings, refreshSettings } = useSettings();
@@ -890,6 +998,15 @@ export default function RealTimeChat({
   const canWrite = !isChannel || (isChannel && (userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin));
   const chatWallpapers = (settings?.preferences?.chatWallpapers || {}) as Record<string, string>;
   const chatWallpaper = chatWallpapers[chatId] || settings?.chatBackground || null;
+
+  // Загрузка статуса блокировки (только для приватных чатов)
+  useEffect(() => {
+    if (chatType !== "PRIVATE" || !partner) return;
+    getBlockStatus(partner.id).then(({ iBlockedThem, theyBlockedMe }) => {
+      setIBlockedThem(iBlockedThem);
+      setTheyBlockedMe(theyBlockedMe);
+    });
+  }, [chatType, partner?.id]);
 
   // Загрузка сообщений
   useEffect(() => {
@@ -981,10 +1098,20 @@ export default function RealTimeChat({
 
   // Подписка на Pusher
   useEffect(() => {
-    if (isSubscribed.current) return;
     const channel = pusherClient.subscribe(chatId);
     
+    // Убираем старые обработчики перед добавлением новых (защита от двойной подписки в StrictMode)
+    channel.unbind("new-message");
+    channel.unbind("message-updated");
+    channel.unbind("message-deleted");
+    channel.unbind("reaction-updated");
+    channel.unbind("messages-read");
+
     const handleNewMessage = (newMessage: any) => {
+      if (!newMessage?.id) return;
+      // Игнорируем сообщения от заблокированного пользователя
+      if (iBlockedThem && newMessage.userId === partner?.id) return;
+      if (theyBlockedMe && newMessage.userId === partner?.id) return;
       setMessages(prev => {
         const exists = prev.some(msg => msg.id === newMessage.id);
         if (exists) return prev;
@@ -1047,7 +1174,6 @@ export default function RealTimeChat({
     channel.bind("message-deleted", handleMessageDelete);
     channel.bind("reaction-updated", handleReactionUpdate);
     channel.bind("messages-read", handleMessagesRead);
-    isSubscribed.current = true;
     
     return () => {
       channel.unbind("new-message", handleNewMessage);
@@ -1056,9 +1182,8 @@ export default function RealTimeChat({
       channel.unbind("reaction-updated", handleReactionUpdate);
       channel.unbind("messages-read", handleMessagesRead);
       pusherClient.unsubscribe(chatId);
-      isSubscribed.current = false;
     };
-  }, [chatId, currentUser.id]);
+  }, [chatId, currentUser.id, iBlockedThem, theyBlockedMe]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1201,40 +1326,49 @@ const startAudioRecording = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recordingStreamRef.current = stream;
+
+    // Настраиваем анализатор амплитуды
+    const ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    const source = ctx.createMediaStreamSource(stream);
+    source.connect(analyser);
+    recordingAudioCtxRef.current = ctx;
+    recordingAnalyserRef.current = analyser;
+
+    const drawAmplitude = () => {
+      if (!recordingAnalyserRef.current) return;
+      const data = new Uint8Array(recordingAnalyserRef.current.frequencyBinCount);
+      recordingAnalyserRef.current.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
+      setRecordingAmplitude(prev => [...prev.slice(-39), avg]);
+      recordingAnimFrameRef.current = requestAnimationFrame(drawAmplitude);
+    };
+    drawAmplitude();
+
     const recorder = new MediaRecorder(stream);
-    const chunks: Blob[] = [];
+    recordingChunksRef.current = [];
     
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: 'audio/webm' });
-      const file = buildFileFromBlob(blob, `voice-${Date.now()}.webm`, 'audio/webm');
-      
-      // Голосовые отправляем без модалки
-      setIsSending(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const fileUrl = await uploadChatImage(formData);
-        await sendMessage(chatId, "", fileUrl?.url, 'AUDIO', null, replyingTo?.id);
-        // Не добавляем сообщение вручную - оно придет через Pusher
-        setHasMarkedRead(false);
-      } catch (error) {
-        console.error("Error sending voice message:", error);
-        toast.error("Ошибка отправки голосового сообщения");
-      } finally {
-        setIsSending(false);
-      }
-      
+    recorder.ondataavailable = (e) => recordingChunksRef.current.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
+      setPendingAudioBlob(blob);
+      // Останавливаем анализатор
+      cancelAnimationFrame(recordingAnimFrameRef.current);
+      recordingAudioCtxRef.current?.close();
+      recordingAudioCtxRef.current = null;
+      recordingAnalyserRef.current = null;
       recordingStreamRef.current?.getTracks().forEach(track => track.stop());
       recordingStreamRef.current = null;
       if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-      setRecordingTime(0);
     };
     
     recorder.start();
     setMediaRecorder(recorder);
     setIsRecording(true);
+    setIsRecordingPaused(false);
     setRecordingType('audio');
+    setRecordingAmplitude([]);
     
     recordingIntervalRef.current = setInterval(() => {
       setRecordingTime(prev => prev + 1);
@@ -1248,6 +1382,66 @@ const startAudioRecording = async () => {
     console.error("Error starting audio recording:", error);
     toast.error("Не удалось получить доступ к микрофону");
   }
+};
+
+const pauseResumeRecording = () => {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state === 'recording') {
+    mediaRecorder.pause();
+    setIsRecordingPaused(true);
+    cancelAnimationFrame(recordingAnimFrameRef.current);
+    if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+  } else if (mediaRecorder.state === 'paused') {
+    mediaRecorder.resume();
+    setIsRecordingPaused(false);
+    recordingIntervalRef.current = setInterval(() => {
+      setRecordingTime(prev => prev + 1);
+    }, 1000);
+    // Возобновляем анализатор
+    const drawAmplitude = () => {
+      if (!recordingAnalyserRef.current) return;
+      const data = new Uint8Array(recordingAnalyserRef.current.frequencyBinCount);
+      recordingAnalyserRef.current.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
+      setRecordingAmplitude(prev => [...prev.slice(-39), avg]);
+      recordingAnimFrameRef.current = requestAnimationFrame(drawAmplitude);
+    };
+    drawAmplitude();
+  }
+};
+
+const sendPendingAudio = async () => {
+  if (!pendingAudioBlob) return;
+  const file = buildFileFromBlob(pendingAudioBlob, `voice-${Date.now()}.webm`, 'audio/webm');
+  setIsSending(true);
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const fileUrl = await uploadChatImage(formData);
+    await sendMessage(chatId, "", fileUrl?.url, 'AUDIO', null, replyingTo?.id);
+    setHasMarkedRead(false);
+  } catch (error) {
+    console.error("Error sending voice message:", error);
+    toast.error("Ошибка отправки голосового сообщения");
+  } finally {
+    setIsSending(false);
+    setPendingAudioBlob(null);
+    setRecordingTime(0);
+    setRecordingAmplitude([]);
+    setIsRecording(false);
+    setMediaRecorder(null);
+    setRecordingType(null);
+  }
+};
+
+const discardPendingAudio = () => {
+  setPendingAudioBlob(null);
+  setRecordingTime(0);
+  setRecordingAmplitude([]);
+  setIsRecording(false);
+  setIsRecordingPaused(false);
+  setMediaRecorder(null);
+  setRecordingType(null);
 };
 
 // Запись видеокружочка (отправляется сразу)
@@ -1368,6 +1562,14 @@ const startRoundVideoRecording = async () => {
   setIsRecording(true);
   setRecordingType('video');
 
+  // Подключаем превью камеры
+  requestAnimationFrame(() => {
+    if (previewVideoRef.current && recordingStreamRef.current) {
+      previewVideoRef.current.srcObject = recordingStreamRef.current;
+      previewVideoRef.current.play().catch(() => {});
+    }
+  });
+
   recordingIntervalRef.current = setInterval(() => {
     setRecordingTime(prev => prev + 1);
   }, 1000);
@@ -1378,15 +1580,19 @@ const startRoundVideoRecording = async () => {
 };
 
   const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
     if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-    recordingStreamRef.current?.getTracks().forEach(track => track.stop());
-    recordingStreamRef.current = null;
-    setIsRecording(false);
-    setMediaRecorder(null);
-    setRecordingType(null);
+    // Для аудио — не сбрасываем isRecording, ждем выбора пользователя (onstop установит pendingAudioBlob)
+    // Для видео — сбрасываем сразу
+    if (recordingType === 'video') {
+      recordingStreamRef.current?.getTracks().forEach(track => track.stop());
+      recordingStreamRef.current = null;
+      setIsRecording(false);
+      setMediaRecorder(null);
+      setRecordingType(null);
+    }
   };
 
   const handleDeleteMessage = (messageId: string) => {
@@ -1521,6 +1727,27 @@ const confirmDeleteMessage = async () => {
     scrollToMessage(searchResults[nextIndex].id);
   };
 
+  const handleToggleBlock = async () => {
+    if (!partner) return;
+    setIsBlockLoading(true);
+    try {
+      if (iBlockedThem) {
+        await unblockUser(partner.id);
+        setIBlockedThem(false);
+        toast.success("Пользователь разблокирован");
+      } else {
+        await blockUser(partner.id);
+        setIBlockedThem(true);
+        toast.success("Пользователь заблокирован");
+      }
+    } catch (e) {
+      toast.error("Ошибка при изменении блокировки");
+    } finally {
+      setIsBlockLoading(false);
+      setShowChatMenu(false);
+    }
+  };
+
   const handleWallpaperUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1565,11 +1792,8 @@ const confirmDeleteMessage = async () => {
     if (message.forwardedFromChatName) {
       return (
         <div
-          className="mb-1 text-xs text-white/50 border-l-2 border-blue-400 pl-2 rounded cursor-pointer hover:bg-white/5"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleForwardSourceClick(message);
-          }}
+          className="mb-1 px-3 pt-2 text-xs text-white/50 border-l-2 border-blue-400 pl-2 rounded cursor-pointer hover:bg-white/5"
+          onClick={(e) => { e.stopPropagation(); handleForwardSourceClick(message); }}
         >
           Переслано из {message.forwardedFromChatName}
           {message.forwardedFromChatType === "PRIVATE" && message.forwardedFromUserName ? ` · ${message.forwardedFromUserName}` : ""}
@@ -1578,26 +1802,18 @@ const confirmDeleteMessage = async () => {
     }
 
     if (!message.replyTo) return null;
-    
+
     const replyTo = message.replyTo;
-    const isReplyingToSelf = replyTo.userId === currentUser.id;
-    const replyToName = isReplyingToSelf ? "себе" : (replyTo.user.displayName || replyTo.user.username);
-    const replyContent = replyTo.content ? (replyTo.content.length > 60 ? replyTo.content.substring(0, 60) + "..." : replyTo.content) : "[Медиа]";
-    
+    const replyToName = replyTo.userId === currentUser.id ? "Вы" : (replyTo.user.displayName || replyTo.user.username);
+    const replyContent = replyTo.content ? (replyTo.content.length > 60 ? replyTo.content.substring(0, 60) + "…" : replyTo.content) : "[Медиа]";
+
     return (
-      <div 
-        className="mb-1 text-xs text-white/40 border-l-2 border-orange-500 pl-2 cursor-pointer hover:bg-white/5 rounded transition-all"
-        onClick={(e) => {
-          e.stopPropagation();
-          scrollToMessage(replyTo.id);
-        }}
+      <div
+        className="mx-3 mt-2 mb-0 rounded-lg bg-black/20 border-l-2 border-violet-400 pl-2 pr-2 py-1.5 cursor-pointer hover:bg-black/30 transition-colors"
+        onClick={(e) => { e.stopPropagation(); scrollToMessage(replyTo.id); }}
       >
-        <span className="text-orange-400">
-          Ответ {replyToName}
-        </span>
-        <p className="truncate max-w-50 text-white/60">
-          {replyContent}
-        </p>
+        <p className="text-[11px] font-semibold text-violet-300 truncate">{replyToName}</p>
+        <p className="text-[11px] text-white/50 truncate">{replyContent}</p>
       </div>
     );
   };
@@ -1742,6 +1958,10 @@ const deleteSelectedMessages = async () => {
 
 // Stream: старт звонка (глобальный слой поймает через Pusher)
 const startVideoCall = async () => {
+  if (iBlockedThem || theyBlockedMe) {
+    toast.error("Нельзя позвонить заблокированному пользователю");
+    return;
+  }
   try {
     await startStreamCall(chatId, "video");
     toast.success("Звонок создан");
@@ -1751,6 +1971,10 @@ const startVideoCall = async () => {
 };
 
 const startAudioCall = async () => {
+  if (iBlockedThem || theyBlockedMe) {
+    toast.error("Нельзя позвонить заблокированному пользователю");
+    return;
+  }
   try {
     await startStreamCall(chatId, "audio");
     toast.success("Звонок создан");
@@ -1819,14 +2043,13 @@ const renderMessage = (message: Message) => {
       {isOwn && <div className="w-10 shrink-0" />}
       
       <div className={`max-w-[70%] relative ${isOwn ? 'order-2' : 'order-1'}`}>
-        {/* Превью ответа (если есть) */}
-        {renderReplyPreview(message)}
-        
         <div className={`rounded-2xl shadow-lg ${
           isOwn 
             ? "bg-[#7166D8] text-white" 
             : "bg-zinc-900/90 border-white/10 text-white"
         }`}>
+          {/* Превью ответа внутри пузыря */}
+          {renderReplyPreview(message)}
           {/* {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
               border-t-[15px] border-t-[#664471] 
               border-r-[15px] border-r-transparent">
@@ -2483,17 +2706,19 @@ const handleUploadFilesWithCaption = async () => {
   return (
     <>
       <div
-  className="flex flex-col h-full bg-[#0a0a0c] bg-cover bg-center w-full"
+  className="flex flex-col h-full bg-[#1B1929] bg-cover bg-center w-full"
   style={{
     backgroundImage: chatWallpaper
       ? `linear-gradient(rgba(10,10,12,0.72), rgba(10,10,12,0.72)), url(${chatWallpaper})`
-      : `
-        radial-gradient(circle at 20% 10%, rgba(125,74,180,0.35) 0%, rgba(10,10,12,0.1) 35%),
-        radial-gradient(circle at 80% 70%, rgba(87,126,174,0.25) 0%, rgba(10,10,12,0.2) 45%),
-        url(${window.innerWidth >= 768 
-          ? "/images/bgChatPc.png" 
-          : "/images/bgChatMobile.png"})
-      `
+      : 
+      // `
+      //   radial-gradient(circle at 20% 10%, rgba(125,74,180,0.35) 0%, rgba(10,10,12,0.1) 35%),
+      //   radial-gradient(circle at 80% 70%, rgba(87,126,174,0.25) 0%, rgba(10,10,12,0.2) 45%),
+      //   url(${window.innerWidth >= 768 
+      //     ? "/images/bgChatPc.png" 
+      //     : "/images/bgChatMobile.png"})
+      // `
+      ``
   }}
   onDragEnter={handleDragEnter}
   onDragLeave={handleDragLeave}
@@ -2551,10 +2776,10 @@ const handleUploadFilesWithCaption = async () => {
           
           <div className="flex gap-1">
           <div className="flex items-center gap-2">
-          <button onClick={startAudioCall} className="p-2 hover:bg-white/10 rounded-full text-green-400" title="Аудиозвонок">
+          <button onClick={startAudioCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-full text-green-400 disabled:opacity-30 disabled:cursor-not-allowed" title="Аудиозвонок">
             <Phone size={20} />
           </button>
-          <button onClick={startVideoCall} className="p-2 hover:bg-white/10 rounded-full text-blue-400" title="Видеозвонок">
+          <button onClick={startVideoCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-full text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed" title="Видеозвонок">
             <Video size={20} />
           </button>
 </div>
@@ -2604,6 +2829,15 @@ const handleUploadFilesWithCaption = async () => {
                   >
                     Сбросить обои чата
                   </button>
+                  {chatType === "PRIVATE" && partner && (
+                    <button
+                      onClick={handleToggleBlock}
+                      disabled={isBlockLoading}
+                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 text-red-400"
+                    >
+                      {iBlockedThem ? "Разблокировать" : "Заблокировать"}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2668,30 +2902,6 @@ const handleUploadFilesWithCaption = async () => {
           )}
         </AnimatePresence>
 
-        {/* Reply indicator */}
-        <AnimatePresence>
-          {replyingTo && (
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0, y: -20 }}
-              className="border-l-4 border-orange-500 bg-orange-500/10 p-3 mx-4 mt-2 rounded-lg flex justify-between items-center"
-            >
-              <div className="flex-1 cursor-pointer" onClick={() => scrollToMessage(replyingTo.id)}>
-                <p className="text-xs text-orange-400 font-medium">
-                  Ответ {replyingTo.userId === currentUser.id ? "себе" : replyingTo.user.displayName || replyingTo.user.username}
-                </p>
-                <p className="text-sm text-white/60 truncate">
-                  {replyingTo.content?.length > 80 ? replyingTo.content.substring(0, 80) + "..." : (replyingTo.content || "[Медиа]")}
-                </p>
-              </div>
-              <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-white/10 rounded-lg">
-                <X size={16} />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Messages */}
         <div 
           ref={messagesContainerRef}
@@ -2717,7 +2927,26 @@ const handleUploadFilesWithCaption = async () => {
               </div>
             </div>
           ) : (
-            messages.map(renderMessage)
+            messages
+              .filter((msg, idx, arr) => arr.findIndex(m => m.id === msg.id) === idx)
+              .map((msg, idx, arr) => {
+                const msgDate = new Date(msg.createdAt);
+                const prevDate = idx > 0 ? new Date(arr[idx - 1].createdAt) : null;
+                const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
+                const now = new Date();
+                const diffDays = Math.floor((now.setHours(0,0,0,0) - new Date(msgDate).setHours(0,0,0,0)) / 86400000);
+                const label = diffDays === 0 ? "Сегодня" : diffDays === 1 ? "Вчера" : msgDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: diffDays > 365 ? "numeric" : undefined });
+                return (
+                  <React.Fragment key={msg.id || idx}>
+                    {isNewDay && (
+                      <div className="flex justify-center my-5">
+                        <span className="text-sm text-white/50 font-medium px-4 py-1.5 bg-white/8 rounded-full backdrop-blur-sm">{label}</span>
+                      </div>
+                    )}
+                    {renderMessage(msg)}
+                  </React.Fragment>
+                );
+              })
           )}
           <div ref={messagesEndRef} />
           </div>
@@ -2727,17 +2956,43 @@ const handleUploadFilesWithCaption = async () => {
         <AnimatePresence>
           {editingMessage && (
             <motion.div 
-              initial={{ opacity: 0, y: 20 }} 
+              initial={{ opacity: 0, y: 8 }} 
               animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0, y: 20 }}
-              className="border-t border-orange-500/20 bg-orange-500/5 p-3 mx-4 rounded-t-lg flex justify-between items-center"
+              exit={{ opacity: 0, y: 8 }}
+              className="mx-4 mb-1 rounded-xl bg-violet-500/10 border border-violet-500/30 px-4 py-2.5 flex items-center gap-3"
             >
-              <div className="flex-1">
-                <p className="text-xs text-orange-400 font-medium">Редактирование сообщения</p>
-                <p className="text-sm text-white/60 truncate">{editingMessage.content?.substring(0, 50)}</p>
+              <Edit size={15} className="text-violet-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-violet-400 font-medium">Редактирование</p>
+                <p className="text-sm text-white/60 truncate">{editingMessage.content?.substring(0, 60)}</p>
               </div>
-              <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="p-1 hover:bg-white/10 rounded-lg">
-                <X size={16} />
+              <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="p-1 hover:bg-white/10 rounded-lg shrink-0">
+                <X size={15} className="text-white/50" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Reply indicator */}
+        <AnimatePresence>
+          {replyingTo && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="mx-4 mb-1 rounded-xl bg-violet-500/10 border border-violet-500/30 px-4 py-2.5 flex items-center gap-3"
+            >
+              <Reply size={15} className="text-violet-400 shrink-0" />
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => scrollToMessage(replyingTo.id)}>
+                <p className="text-xs text-violet-400 font-medium">
+                  Ответ {replyingTo.userId === currentUser.id ? "себе" : (replyingTo.user.displayName || replyingTo.user.username)}
+                </p>
+                <p className="text-sm text-white/60 truncate">
+                  {replyingTo.content?.length > 60 ? replyingTo.content.substring(0, 60) + "..." : (replyingTo.content || "[Медиа]")}
+                </p>
+              </div>
+              <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-white/10 rounded-lg shrink-0">
+                <X size={15} className="text-white/50" />
               </button>
             </motion.div>
           )}
@@ -2745,23 +3000,141 @@ const handleUploadFilesWithCaption = async () => {
 
         {/* Recording indicator */}
         <AnimatePresence>
-          {isRecording && (
+          {(isRecording || pendingAudioBlob) && recordingType === 'audio' && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }} 
               animate={{ opacity: 1, y: 0 }} 
               exit={{ opacity: 0, y: 20 }}
-              className="bg-red-500/20 p-3 mx-4 mb-2 rounded-lg flex items-center justify-between"
+              className="mx-4 mb-2 rounded-xl overflow-hidden border border-violet-500/30 bg-[#1a1025]"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-sm text-white">
-                  {recordingType === 'audio' ? '🎤 Запись голосового' : '🎥 Запись видеокружочка'}...
-                </span>
-                <span className="text-sm text-white/60 font-mono">{formatTime(recordingTime)}</span>
+              {!pendingAudioBlob ? (
+                // Режим записи
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isRecordingPaused ? 'bg-yellow-400' : 'bg-red-500 animate-pulse'}`} />
+                  
+                  {/* Waveform */}
+                  <div className="flex items-end gap-[2px] h-8 flex-1">
+                    {Array.from({ length: 40 }, (_, i) => {
+                      const amp = recordingAmplitude[i] ?? 0;
+                      return (
+                        <div
+                          key={i}
+                          className={`flex-1 rounded-full transition-all duration-75 ${isRecordingPaused ? 'bg-yellow-400/40' : 'bg-violet-400'}`}
+                          style={{ height: `${Math.max(15, amp * 100)}%` }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <span className="text-sm text-white/60 font-mono shrink-0">{formatTime(recordingTime)}</span>
+
+                  {/* Пауза/Возобновить */}
+                  <button
+                    onClick={pauseResumeRecording}
+                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors shrink-0"
+                    title={isRecordingPaused ? "Возобновить" : "Пауза"}
+                  >
+                    {isRecordingPaused ? <Play size={16} className="text-yellow-400" /> : <Pause size={16} className="text-white/80" />}
+                  </button>
+
+                  {/* Стоп */}
+                  <button
+                    onClick={stopRecording}
+                    className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-white text-sm transition-colors shrink-0"
+                  >
+                    Стоп
+                  </button>
+                </div>
+              ) : (
+                // Режим выбора: отправить или удалить
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <Mic size={18} className="text-violet-400 shrink-0" />
+                  <span className="text-sm text-white/70 flex-1">Голосовое · {formatTime(recordingTime)}</span>
+                  <button
+                    onClick={discardPendingAudio}
+                    className="p-2 rounded-full bg-red-500/20 hover:bg-red-500/40 transition-colors"
+                    title="Удалить"
+                  >
+                    <Trash2 size={16} className="text-red-400" />
+                  </button>
+                  <button
+                    onClick={sendPendingAudio}
+                    disabled={isSending}
+                    className="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 rounded-lg text-white text-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    Отправить
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+          {isRecording && recordingType === 'video' && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: 20 }}
+              className="mx-4 mb-2 rounded-2xl overflow-hidden border border-white/10 bg-[#1a1025]"
+            >
+              <div className="flex items-center gap-4 px-4 py-3">
+                {/* Круглое превью с камеры */}
+                <div className="relative shrink-0">
+                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500 shadow-lg shadow-red-500/30">
+                    <video
+                      ref={previewVideoRef}
+                      className="w-full h-full object-cover scale-x-[-1]"
+                      muted
+                      playsInline
+                    />
+                  </div>
+                  <div className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 border-2 border-[#1a1025] animate-pulse" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white">Запись кружочка</p>
+                  <p className="text-xs text-white/40 mt-0.5">Нажмите «Стоп» для отправки</p>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {/* Мини-таймер с прогрессом до 60с */}
+                    <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-red-500 rounded-full"
+                        animate={{ width: `${Math.min((recordingTime / 60) * 100, 100)}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                    <span className="text-xs text-white/50 font-mono shrink-0">{formatTime(recordingTime)}</span>
+                  </div>
+                </div>
+
+                <button onClick={stopRecording} className="shrink-0 px-3 py-1.5 bg-red-500 hover:bg-red-600 rounded-xl text-white text-sm font-medium transition-colors">
+                  Стоп
+                </button>
               </div>
-              <button onClick={stopRecording} className="px-3 py-1 bg-red-500 hover:bg-red-600 rounded-lg text-white text-sm transition-colors">
-                Остановить
-              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Blocked banner */}
+        <AnimatePresence>
+          {(iBlockedThem || theyBlockedMe) && chatType === "PRIVATE" && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="mx-4 mb-2 rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 flex items-center justify-between gap-3"
+            >
+              <p className="text-sm text-red-400">
+                {iBlockedThem ? "Вы заблокировали этого пользователя. Отправка сообщений недоступна." : "Этот пользователь заблокировал вас."}
+              </p>
+              {iBlockedThem && (
+                <button
+                  onClick={handleToggleBlock}
+                  disabled={isBlockLoading}
+                  className="shrink-0 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 rounded-lg text-red-400 text-xs transition-colors disabled:opacity-50"
+                >
+                  Разблокировать
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -2778,6 +3151,7 @@ const handleUploadFilesWithCaption = async () => {
               type="button" 
               onClick={() => setShowMediaMenu(!showMediaMenu)} 
               className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors duration-200"
+              disabled={iBlockedThem || theyBlockedMe}
             >
               <Paperclip size={28} className="text-white/60" />
             </button>
@@ -2815,7 +3189,7 @@ const handleUploadFilesWithCaption = async () => {
                     <button 
                       type="button" 
                       onClick={startAudioRecording} 
-                      disabled={isRecording}
+                      disabled={isRecording || !!pendingAudioBlob}
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
                     >
                       <Mic size={16} className="text-purple-400" /> Голосовое
@@ -2839,9 +3213,9 @@ const handleUploadFilesWithCaption = async () => {
             type="text" 
             value={newMessage} 
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={isRecording ? "Идет запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
-            disabled={isSending || isRecording} 
-            className="flex-1 bg-white/5 rounded-full px-6 py-4 text-white outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50" 
+            placeholder={isRecording ? "Идет запись..." : pendingAudioBlob ? "Отправьте или удалите запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
+            disabled={isSending || isRecording || !!pendingAudioBlob || iBlockedThem || theyBlockedMe} 
+            className="flex-1 bg-white/5 rounded-full px-6 py-4 text-white outline-none focus:ring-1 focus:ring-[#7166D8] disabled:opacity-50 duration-200" 
           />
           
           <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'IMAGE')} />
@@ -2856,7 +3230,7 @@ const handleUploadFilesWithCaption = async () => {
       {canWrite && (
       <button 
         type="submit" 
-        disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite)}
+        disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite) || iBlockedThem || theyBlockedMe}
         className="bg-[#7166D8] text-black p-3 rounded-full hover:bg-[#7166D8]/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSending ? (
