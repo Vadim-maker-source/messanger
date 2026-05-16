@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import Avatar from "@/components/Avatar";
 import { 
   Send, Paperclip, Mic, Video, Phone, X, Play, Pause, 
   MoreVertical, ArrowLeft, MessageSquare, Reply, Forward, Edit, 
@@ -2102,30 +2103,31 @@ const renderMessage = (message: Message) => {
               chatMembers={chatMembers}
             />
           </div>
+
+          {/* Реакции — внутри пузыря */}
+          {message.reactions && Object.entries(message.reactions).length > 0 && (
+            <div className={`flex gap-1 px-3 pb-2 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
+              {Object.entries(message.reactions).map(([key, users]) => {
+                const emoji = reactionsList.find(r => r.value === key)?.emoji ?? key;
+                const hasUserReaction = (users as string[]).includes(currentUser.id);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleAddReaction(message.id, key)}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all ${
+                      hasUserReaction
+                        ? "bg-white/20 text-white"
+                        : "bg-white/8 hover:bg-white/15 text-white/70"
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    {(users as string[]).length > 1 && <span className="font-semibold">{(users as string[]).length}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        
-        {/* Блок реакций */}
-        {message.reactions && Object.entries(message.reactions).length > 0 && (
-          <div className={`flex gap-1 mt-1.5 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
-            {Object.entries(message.reactions).map(([reaction, users]) => {
-              const hasUserReaction = users.includes(currentUser.id);
-              return (
-                <button 
-                  key={`${message.id}-${reaction}`}
-                  onClick={() => handleAddReaction(message.id, reaction)}
-                  className={`text-[11px] px-2 py-0.5 rounded-full transition-all flex items-center gap-1.5 border ${
-                    hasUserReaction 
-                      ? "bg-orange-500 border-orange-400 text-white shadow-md shadow-orange-500/20" 
-                      : "bg-white/5 border-white/10 hover:bg-white/10 text-white/70"
-                  }`}
-                >
-                  <span>{reaction}</span>
-                  <span className="font-bold">{users.length}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
         
         {/* Пикер эмодзи */}
         {showEmojiPicker === message.id && (
@@ -2735,16 +2737,7 @@ const handleUploadFilesWithCaption = async () => {
             <Link href={chatType === "PRIVATE" && partner ? `/profile/${partner.id}` : `/chat/${chatId}/data`}>
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="w-13 h-13 rounded-full overflow-hidden bg-linear-to-br from-orange-500/20 to-violet-500/20">
-                  {chatAvatar ? (
-                    <img src={chatAvatar} className="w-full h-full object-cover" alt={chatName || "Chat"} />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-lg font-bold">
-                      {chatName?.[0]?.toUpperCase() || "💬"}
-                    </div>
-                  )}
-                </div>
-              </div>
+                <Avatar image={chatAvatar} title={String(chatName)} size={44} /></div>
               
               <div>
                 <h2 className="text-xl font-semibold text-white flex items-center gap-2">

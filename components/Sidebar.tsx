@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Avatar from "@/components/Avatar";
 import { 
   Plus, Hash, Menu, X, Search, ServerIcon, Users,
   CheckCheck, Clock, MoreVertical, Settings, LogOut, 
@@ -19,7 +20,7 @@ const MIN_WIDTH = 80;
 const MAX_WIDTH = 700;
 const DEFAULT_WIDTH = 470;
 const COLLAPSED_WIDTH = 80;
-const CHANNELS_WIDTH = 280;
+const CHANNELS_WIDTH = 340;
 
 interface ChatItem {
   id: string;
@@ -62,6 +63,8 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [chatsWidth, setChatsWidth] = useState(DEFAULT_WIDTH);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: ChatItem } | null>(null);
+  const [serverContextMenu, setServerContextMenu] = useState<{ x: number; y: number; server: ChatItem } | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
   const [localPrefs, setLocalPrefs] = useState<Record<string, Pref>>({});
   const [blockedUsers, setBlockedUsers] = useState<Record<string, boolean>>({});
 
@@ -70,23 +73,27 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   useEffect(() => {
     const map: Record<string, Pref> = {};
     items.forEach(item => {
-      if (item.uiType !== 'SERVER') {
-        map[item.id] = {
-          isPinned: item.isPinned ?? false,
-          isArchived: item.isArchived ?? false,
-          isMuted: item.isMuted ?? false,
-        };
-      }
+      map[item.id] = {
+        isPinned: item.isPinned ?? false,
+        isArchived: item.isArchived ?? false,
+        isMuted: item.isMuted ?? false,
+      };
     });
     setLocalPrefs(map);
   }, [items]);
 
   useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
+    if (!contextMenu && !serverContextMenu) return;
+    const close = () => { setContextMenu(null); setServerContextMenu(null); };
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
-  }, [contextMenu]);
+  }, [contextMenu, serverContextMenu]);
+
+  const handleServerContextMenu = (e: React.MouseEvent, server: ChatItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setServerContextMenu({ x: e.clientX, y: e.clientY, server });
+  };
 
   useEffect(() => {
     if (!contextMenu?.chat.partnerId) return;
@@ -227,11 +234,22 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   const servers = items.filter(i => i.uiType === 'SERVER');
   const activeServer = servers.find(s => s.id === expandedServer);
 
-  const sortedChats = [...chats].sort((a, b) => {
+  const getItemDate = (i: ChatItem) =>
+    new Date(i.lastMessage?.createdAt ?? i.updatedAt ?? 0).getTime();
+
+  const allItems = [...servers, ...chats].sort((a, b) => {
     const ap = localPrefs[a.id]?.isPinned ? 1 : 0, bp = localPrefs[b.id]?.isPinned ? 1 : 0;
     if (bp !== ap) return bp - ap;
-    return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
+    return getItemDate(b) - getItemDate(a);
   });
+
+  const visibleItems = allItems.filter(i => !(localPrefs[i.id]?.isArchived));
+  const archivedItems = allItems.filter(i => localPrefs[i.id]?.isArchived);
+  const archivedCount = archivedItems.length;
+
+  useEffect(() => {
+    if (archivedCount === 0 && showArchive) setShowArchive(false);
+  }, [archivedCount]);
 
 
   return (
@@ -295,90 +313,132 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
           </div>
 
           {/* Chat List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {/* Servers expanded */}
-            {servers.length > 0 && chatsWidth > 100 && (
-              <div className="px-2 py-2">
-                <div className="text-[11px] font-semibold text-white/40 px-3 py-1 uppercase tracking-wider">Серверы</div>
-                {servers.map(server => (
-                  <button key={server.id} onClick={() => handleServerClick(server)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${expandedServer === server.id ? 'bg-violet-500/20' : 'hover:bg-white/5'}`}>
-                    <div className="w-12 h-12 rounded-full bg-violet-600/20 flex items-center justify-center overflow-hidden">
-                      {server.image ? <img src={server.image} className="w-full h-full object-cover" /> : <span className="text-sm font-bold text-violet-400">#{server.title?.[0]}</span>}
-                    </div>
-                    <span className="flex-1 text-left text-lg font-medium text-white/80 truncate">{server.title}</span>
-                    <ChevronRight size={14} className={`text-white/20 transition-transform ${expandedServer === server.id ? 'rotate-90' : ''}`} />
-                  </button>
-                ))}
+          <div className="flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
+            {/* Archive button — always at top */}
+            {archivedCount > 0 && chatsWidth > 100 && (
+              <div className="px-3 pt-3 pb-1">
+                <button onClick={() => setShowArchive(v => !v)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all border ${showArchive ? 'bg-blue-500/15 border-blue-500/30 text-blue-300' : 'bg-white/3 border-white/8 hover:bg-white/5 text-white/50 hover:text-white/70'}`}>
+                  <Archive size={18} className={showArchive ? 'text-blue-400' : 'text-white/40'} />
+                  <span className="text-sm font-medium flex-1 text-left">Архив</span>
+                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${showArchive ? 'bg-blue-500/30 text-blue-300' : 'bg-white/10 text-white/40'}`}>{archivedCount}</span>
+                  <ChevronRight size={14} className={`transition-transform duration-200 ${showArchive ? 'rotate-90 text-blue-400' : 'text-white/20'}`} />
+                </button>
               </div>
             )}
-            {/* Servers collapsed */}
-            {servers.length > 0 && chatsWidth <= 100 && (
-              <div className="px-2 py-2 flex flex-col items-center gap-2">
-                {servers.map(server => (
-                  <button key={server.id} onClick={() => handleServerClick(server)} title={server.title}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${expandedServer === server.id ? 'bg-violet-500/20 ring-4 ring-violet-500/50' : 'bg-violet-600/20 hover:bg-violet-600/30'}`}>
-                    {server.image ? <img src={server.image} className="w-full h-full object-cover rounded-full" /> : <span className="text-lg font-bold text-violet-400">#{server.title?.[0]}</span>}
-                  </button>
-                ))}
+            {archivedCount > 0 && chatsWidth <= 100 && (
+              <div className="flex justify-center pt-3 pb-1">
+                <button onClick={() => setShowArchive(v => !v)} title="Архив"
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all relative ${showArchive ? 'bg-blue-500/20 ring-2 ring-blue-500/40' : 'bg-white/5 hover:bg-white/10'}`}>
+                  <Archive size={18} className={showArchive ? 'text-blue-400' : 'text-white/40'} />
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">{archivedCount}</span>
+                </button>
               </div>
             )}
 
-            {/* Chats */}
-            <div className="px-2 py-2">
-              {chatsWidth > 100 && chats.length > 0 && (
-                <div className="text-[11px] font-semibold text-white/40 px-3 py-1 uppercase tracking-wider">Чаты</div>
-              )}
-              {sortedChats.map(chat => {
-                const pref = localPrefs[chat.id] ?? { isPinned: false, isArchived: false, isMuted: false };
-                return (
-                  <motion.button key={chat.id}
-                    onClick={() => handleNavigation(`/chat/${chat.id}`)}
-                    onContextMenu={e => handleChatContextMenu(e, chat)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-all group"
-                  >
-                    <div className="relative shrink-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center overflow-hidden">
-                        {chat.image ? <img src={chat.image} className="w-full h-full object-cover" /> : <span className="text-lg font-bold text-violet-400">{chat.title?.[0]?.toUpperCase()}</span>}
-                      </div>
-                      {chat.isTyping && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0f0f12]" />}
-                    </div>
-                    {chatsWidth > 100 && (
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-semibold text-white/90 truncate">{chat.title}</h3>
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
-                            {pref.isPinned && <Pin size={10} className="text-violet-400" />}
-                            {chat.lastMessage && <span className="text-[14px] text-white/30">{formatTime(chat.lastMessage.createdAt)}</span>}
+            <AnimatePresence mode="wait">
+              {showArchive ? (
+                /* Archive view */
+                <motion.div key="archive"
+                  initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 30 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="px-2 py-2"
+                >
+                  {chatsWidth > 100 && (
+                    <div className="text-[11px] font-semibold text-blue-400/60 px-3 py-1 uppercase tracking-wider">В архиве</div>
+                  )}
+                  {archivedItems.map(item => {
+                    const isServer = item.uiType === 'SERVER';
+                    return (
+                      <motion.button key={item.id}
+                        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}
+                        onClick={() => isServer ? handleServerClick(item) : handleNavigation(`/chat/${item.id}`)}
+                        onContextMenu={e => isServer ? handleServerContextMenu(e, item) : handleChatContextMenu(e, item)}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-all opacity-75 hover:opacity-100"
+                      >
+                        <Avatar image={item.image} title={item.title} size={48} />
+                        {chatsWidth > 100 && (
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <h3 className="text-base font-semibold text-white/70 truncate">{item.title}</h3>
+                              {!isServer && item.lastMessage && <span className="text-[13px] text-white/20 shrink-0">{formatTime(item.lastMessage.createdAt)}</span>}
+                            </div>
+                            <p className="text-[14px] text-white/30 truncate">
+                              {isServer
+                                ? `${item.chats?.length || 0} каналов`
+                                : item.lastMessage
+                                  ? (item.lastMessage.isVoice ? '🎤 Голосовое' : item.lastMessage.isPhoto ? '🖼️ Фото' : item.lastMessage.isFile ? '📎 Файл' : truncate(item.lastMessage.content, 45))
+                                  : ''}
+                            </p>
                           </div>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
+              ) : (
+                /* Normal view — unified list */
+                <motion.div key="normal"
+                  initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="px-2 py-2"
+                >
+                  {visibleItems.map(item => {
+                    const isServer = item.uiType === 'SERVER';
+                    const pref = localPrefs[item.id] ?? { isPinned: false, isArchived: false, isMuted: false };
+                    return (
+                      <motion.button key={item.id}
+                        onClick={() => isServer ? handleServerClick(item) : handleNavigation(`/chat/${item.id}`)}
+                        onContextMenu={e => isServer ? handleServerContextMenu(e, item) : handleChatContextMenu(e, item)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-all group ${isServer && expandedServer === item.id ? 'bg-violet-500/10' : ''}`}
+                      >
+                        <div className="relative shrink-0">
+                          <Avatar image={item.image} title={item.title} size={48} />
+                          {!isServer && item.isTyping && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0f0f12]" />}
                         </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1 flex-1 min-w-0">
-                            {chat.lastMessage && (
-                              <>
-                                {getMessageStatusIcon(chat.lastMessage.status)}
-                                <p className="text-[16px] text-white/40 truncate">
-                                  {chat.lastMessage.senderId === user?.id && 'Вы: '}
-                                  {chat.lastMessage.isVoice ? '🎤 Голосовое' : chat.lastMessage.isPhoto ? '🖼️ Фото' : chat.lastMessage.isFile ? '📎 Файл' : truncate(chat.lastMessage.content, 45)}
-                                </p>
-                              </>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
-                            {pref.isMuted && <BellOff size={12} className="text-white/20" />}
-                            {(chat.unreadCount ?? 0) > 0 && !pref.isMuted && (
-                              <div className="min-w-[20px] h-5 bg-red-500 rounded-full flex items-center justify-center px-1.5">
-                                <span className="text-[10px] font-bold text-white">{(chat.unreadCount ?? 0) > 99 ? '99+' : chat.unreadCount}</span>
+                        {chatsWidth > 100 && (
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-lg font-semibold text-white/90 truncate">{item.title}</h3>
+                              <div className="flex items-center gap-1 shrink-0 ml-2">
+                                {!isServer && pref.isPinned && <Pin size={10} className="text-violet-400" />}
+                                {!isServer && item.lastMessage && <span className="text-[14px] text-white/30">{formatTime(item.lastMessage.createdAt)}</span>}
+                                {isServer && <ChevronRight size={14} className={`text-white/20 transition-transform ${expandedServer === item.id ? 'rotate-90' : ''}`} />}
                               </div>
-                            )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1 flex-1 min-w-0">
+                                {isServer ? (
+                                  <p className="text-[14px] text-white/30 truncate">{item.chats?.length || 0} каналов</p>
+                                ) : item.lastMessage ? (
+                                  <>
+                                    {getMessageStatusIcon(item.lastMessage.status)}
+                                    <p className="text-[16px] text-white/40 truncate">
+                                      {item.lastMessage.senderId === user?.id && 'Вы: '}
+                                      {item.lastMessage.isVoice ? '🎤 Голосовое' : item.lastMessage.isPhoto ? '🖼️ Фото' : item.lastMessage.isFile ? '📎 Файл' : truncate(item.lastMessage.content, 45)}
+                                    </p>
+                                  </>
+                                ) : null}
+                              </div>
+                              {!isServer && (
+                                <div className="flex items-center gap-1 shrink-0 ml-2">
+                                  {pref.isMuted && <BellOff size={12} className="text-white/20" />}
+                                  {(item.unreadCount ?? 0) > 0 && !pref.isMuted && (
+                                    <div className="min-w-[20px] h-5 bg-red-500 rounded-full flex items-center justify-center px-1.5">
+                                      <span className="text-[10px] font-bold text-white">{(item.unreadCount ?? 0) > 99 ? '99+' : item.unreadCount}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Collapsed footer */}
@@ -444,9 +504,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
               <div className="px-4 py-3 border-b border-white/5 relative">
                 <button onClick={() => handleNavigation(`/chat/${activeServer.id}/data`)}
                   className="w-full flex items-center gap-3 hover:bg-white/5 rounded-xl p-2 transition-all group">
-                  <div className="w-10 h-10 rounded-xl bg-violet-600/20 flex items-center justify-center overflow-hidden shrink-0">
-                    {activeServer.image ? <img src={activeServer.image} className="w-full h-full object-cover" /> : <span className="text-sm font-bold text-violet-400">#{activeServer.title?.[0]}</span>}
-                  </div>
+                  <Avatar image={activeServer.image} title={activeServer.title} size={40} rounded="rounded-xl" />
                   <div className="flex-1 min-w-0 text-left">
                     <h3 className="text-sm font-semibold text-white/90 truncate group-hover:text-violet-400">{activeServer.title}</h3>
                     <p className="text-xs text-white/40">{activeServer.chats?.length || 0} каналов</p>
@@ -461,9 +519,9 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                 <div className="text-[11px] font-semibold text-white/40 px-3 py-1 uppercase tracking-wider">Каналы</div>
                 {activeServer.chats?.map((chat: any) => (
                   <button key={chat.id} onClick={() => handleNavigation(`/chat/${chat.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/60 hover:text-white/90 hover:bg-white/5 transition-all group">
-                    <Hash size={16} className="text-white/40 group-hover:text-violet-400" />
-                    <span className="flex-1 text-left truncate">{chat.name}</span>
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/60 hover:text-white/90 hover:bg-white/5 transition-all group">
+                    <Avatar image={chat.image} title={chat.name} size={36} />
+                    <span className="flex-1 text-left truncate font-medium">{chat.name}</span>
                     {(chat.unreadCount ?? 0) > 0 && (
                       <div className="min-w-[18px] h-4 bg-red-500 rounded-full flex items-center justify-center px-1">
                         <span className="text-[9px] font-bold text-white">{chat.unreadCount > 99 ? '99+' : chat.unreadCount}</span>
@@ -526,9 +584,52 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                       {blockedUsers[contextMenu.chat.partnerId] ? 'Разблокировать' : 'Заблокировать'}
                     </button>
                   )}
+                  {contextMenu.chat.type === 'GROUP' && (
+                    <button onClick={() => { setContextMenu(null); handleNavigation(`/chat/${contextMenu.chat.id}/leave`); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
+                      <LogOut size={15} />
+                      Покинуть группу
+                    </button>
+                  )}
                 </div>
               );
             })()}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Server Context Menu */}
+      <AnimatePresence>
+        {serverContextMenu && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            style={{ position: 'fixed', top: serverContextMenu.y, left: serverContextMenu.x, zIndex: 9999 }}
+            className="bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[200px]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="py-1">
+              <button onClick={() => { handleNavigation(`/chat/${serverContextMenu.server.id}/data`); setServerContextMenu(null); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
+                <Settings size={15} className="text-violet-400" />
+                Настройки сервера
+              </button>
+              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${serverContextMenu.server.id}`); setServerContextMenu(null); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
+                <FolderPlus size={15} className="text-green-400" />
+                Скопировать ссылку
+              </button>
+              <button onClick={() => { applyPref(serverContextMenu.server.id, { isArchived: !(localPrefs[serverContextMenu.server.id]?.isArchived) }); setServerContextMenu(null); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
+                {localPrefs[serverContextMenu.server.id]?.isArchived
+                  ? <><ArchiveRestore size={15} className="text-blue-400" />Из архива</>
+                  : <><Archive size={15} className="text-blue-400" />В архив</>}
+              </button>
+              <div className="h-px bg-white/10 my-1" />
+              <button onClick={() => { handleNavigation(`/chat/${serverContextMenu.server.id}/leave`); setServerContextMenu(null); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
+                <LogOut size={15} />
+                Покинуть сервер
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

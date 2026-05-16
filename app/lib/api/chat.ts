@@ -1,6 +1,7 @@
 "use server"
 
 import { AccessType, ChatRole, ChatType } from "@prisma/client";
+import { generateAvatarColor } from "@/lib/avatar";
 import { prisma } from "../prisma";
 import { getCurrentUser } from "./user";
 import { pusherServer } from "../pusher";
@@ -323,6 +324,7 @@ export async function getUserSidebarData() {
       name: chat.name || `Канал ${chat.id.slice(0, 6)}`,
       type: chat.type,
       access: chat.access,
+      image: (chat as any).imageUrl ?? null,
       unreadCount: chat.unreadCount
     }))
   }));
@@ -668,6 +670,7 @@ export async function createFullServer({ name, imageUrl, access, channels, userI
         name: chatName,
         type: ch.type === "CHANNEL" ? "CHANNEL" : "GROUP",
         access: access as AccessType,
+        imageUrl: generateAvatarColor(),
         serverId: server.id,
         users: {
           connect: allMemberIds.map(id => ({ id }))
@@ -1567,6 +1570,7 @@ export async function createServerChannel(serverId: string, data: { name: string
       name: data.name,
       type: data.type || "CHANNEL",
       access: (data.access as AccessType) || server.access,
+      imageUrl: generateAvatarColor(),
       serverId: server.id,
       users: {
         connect: server.members.map(m => ({ id: m.id }))
