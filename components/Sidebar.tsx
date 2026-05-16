@@ -17,7 +17,7 @@ import { setChatPreference, deleteChat, deleteChatForMe } from "@/app/lib/api/ch
 import { signOut } from "next-auth/react";
 
 const MIN_WIDTH = 80;
-const MAX_WIDTH = 700;
+const MAX_WIDTH = 800;
 const DEFAULT_WIDTH = 470;
 const COLLAPSED_WIDTH = 80;
 const CHANNELS_WIDTH = 340;
@@ -166,9 +166,13 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   const startResizing = (e: React.MouseEvent) => { e.preventDefault(); setIsResizing(true); };
   const stopResizing = () => setIsResizing(false);
   const resize = (e: MouseEvent) => {
-    if (isResizing && sidebarRef.current) {
+    if (isResizing) {
       const w = e.clientX;
-      if (w >= MIN_WIDTH && w <= MAX_WIDTH) { setWidth(w); setIsExpanded(w > MIN_WIDTH + 20); }
+      if (w >= MIN_WIDTH && w <= MAX_WIDTH) { 
+        setWidth(w); 
+        setChatsWidth(w);
+        setIsExpanded(w > MIN_WIDTH + 20); 
+      }
     }
   };
   useEffect(() => {
@@ -193,6 +197,16 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
     if (expandedServer) { setExpandedServer(null); setChatsWidth(DEFAULT_WIDTH); setWidth(DEFAULT_WIDTH); setIsExpanded(true); }
     else if (isExpanded) { setWidth(MIN_WIDTH); setChatsWidth(MIN_WIDTH); setIsExpanded(false); }
     else { setWidth(DEFAULT_WIDTH); setChatsWidth(DEFAULT_WIDTH); setIsExpanded(true); }
+  };
+
+  const toggleMaximize = () => {
+    if (width >= 600) {
+      setWidth(DEFAULT_WIDTH);
+      setChatsWidth(DEFAULT_WIDTH);
+    } else {
+      setWidth(700);
+      setChatsWidth(700);
+    }
   };
 
   const getMessageStatusIcon = (status?: string) => {

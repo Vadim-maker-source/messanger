@@ -10,7 +10,8 @@ import {
   Download,
   CheckCheck,
   Loader2,
-  Brush
+  Brush,
+  SendHorizonal
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -986,6 +987,7 @@ export default function RealTimeChat({
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [deletingMessages, setDeletingMessages] = useState<Set<string>>(new Set());
 
   const [showImageEditor, setShowImageEditor] = useState(false);
   const [editingImageFile, setEditingImageFile] = useState<File | null>(null);
@@ -1267,6 +1269,8 @@ export default function RealTimeChat({
           inputRef.current?.focus();
         });
       }
+      // Обновляем sidebar после отправки
+      await fetch('/api/sidebar/refresh', { method: 'POST' });
     } catch (error) {
       console.error("Error sending message:", error);
       alert(error instanceof Error ? error.message : "Ошибка отправки");
@@ -1605,12 +1609,18 @@ const confirmDeleteMessage = async () => {
   if (!messageToDelete) return;
 
   try {
+    setDeletingMessages(prev => new Set(prev).add(messageToDelete));
     await deleteMessage(messageToDelete);
     setMessages(prev => prev.filter(msg => msg.id !== messageToDelete));
   } catch (error) {
     console.error("Error deleting message:", error);
     alert(error instanceof Error ? error.message : "Ошибка удаления");
   } finally {
+    setDeletingMessages(prev => {
+      const next = new Set(prev);
+      next.delete(messageToDelete);
+      return next;
+    });
     setDeleteDialogOpen(false);
     setMessageToDelete(null);
   }
@@ -1893,6 +1903,8 @@ const deleteSelectedMessages = async () => {
   let successCount = 0;
   let failCount = 0;
   
+  setDeletingMessages(new Set(selectedMessages));
+  
   for (const messageId of selectedMessages) {
     try {
       const message = messages.find(m => m.id === messageId);
@@ -1916,6 +1928,8 @@ const deleteSelectedMessages = async () => {
       failCount++;
     }
   }
+  
+  setDeletingMessages(new Set());
   
   if (successCount > 0) {
     toast.success(`Удалено сообщений: ${successCount}`);
@@ -1993,6 +2007,7 @@ const startAudioCall = async () => {
 const renderMessage = (message: Message) => {
   const isOwn = message.userId === currentUser.id;
   const isSelected = selectedMessages.has(message.id);
+  const isDeleting = deletingMessages.has(message.id);
   const displayName = isOwn ? "Вы" : (message.user.displayName || message.user.username);
   
   // старые peerjs-ссылки могут остаться в истории — показываем как текст
@@ -2004,6 +2019,12 @@ const renderMessage = (message: Message) => {
       id={`message-${message.id}`}
       initial={{ opacity: 0, y: 15 }} 
       animate={{ opacity: 1, y: 0 }}
+      exit={isDeleting ? {
+        opacity: 0,
+        scale: [1, 1.2, 0],
+        filter: ['blur(0px)', 'blur(4px)', 'blur(8px)'],
+        transition: { duration: 0.4, ease: "easeOut" }
+      } : undefined}
       className={`flex gap-2 group mb-4 transition-colors duration-200 ${isOwn ? 'justify-end' : 'justify-start'} ${
         isSelected ? 'bg-violet-500/10 rounded-xl -mx-2 px-2' : ''
       } ${isSelectionMode ? 'cursor-pointer hover:bg-white/5 rounded-xl -mx-2 px-2' : ''}`}
@@ -2064,14 +2085,14 @@ const renderMessage = (message: Message) => {
           
           {/* Имя отправителя в групповых чатах (для не-своих сообщений) */}
           {!isOwn && chatType !== "PRIVATE" && (
-            <p className="text-[11px] text-orange-400 mb-1 font-semibold uppercase tracking-wider px-3 pt-2">
+            <p className="text-[11px] text-[#7166D8] mb-1 font-semibold uppercase tracking-wider px-3 pt-2">
               {displayName}
             </p>
           )}
           
           {/* Контент: либо Кнопка Звонка, либо Текст/Медиа */}
           {incomingPeerId ? (
-            <div className="py-2 min-w-[220px]">
+            <div className="py-2 min-w-55">
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2.5 rounded-full ${isOwn ? "bg-white/20" : "bg-green-500/20"}`}>
                   <Video size={20} className={isOwn ? "text-white" : "text-green-400"} />
@@ -2112,7 +2133,7 @@ const renderMessage = (message: Message) => {
 
           {/* Реакции — внутри пузыря */}
           {message.reactions && Object.entries(message.reactions).length > 0 && (
-            <div className={`flex gap-1 px-3 pb-2 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex gap-2 px-3 pb-2 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
               {Object.entries(message.reactions).map(([key, users]) => {
                 const emoji = reactionsList.find(r => r.value === key)?.emoji ?? key;
                 const hasUserReaction = (users as string[]).includes(currentUser.id);
@@ -2120,7 +2141,7 @@ const renderMessage = (message: Message) => {
                   <button
                     key={key}
                     onClick={() => handleAddReaction(message.id, key)}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm transition-all ${
                       hasUserReaction
                         ? "bg-white/20 text-white"
                         : "bg-white/8 hover:bg-white/15 text-white/70"
@@ -2734,37 +2755,38 @@ const handleUploadFilesWithCaption = async () => {
   onDrop={handleDrop}
 >
         <div className="w-full flex justify-center z-50">
-        {/* Header */}
-        <div className="border-b border-white/10 backdrop-blur-sm bg-[#0f0f12] pt-3 pb-3 px-6 flex items-center justify-between w-full">
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.back()} className="lg:hidden p-2 hover:bg-white/5 rounded-xl transition-colors">
+        {/* Header - сплошная полоса с серым фоном */}
+        <div className="border-b border-gray-300/20 bg-[#1b192970] backdrop-blur-sm py-4 px-6 flex items-center justify-between w-full">
+          {/* Левая часть - информация о чате */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => router.back()} className="lg:hidden p-2 hover:bg-white/10 rounded-xl transition-colors">
               <ArrowLeft size={20} className="text-white/60" />
             </button>
-            <Link href={chatType === "PRIVATE" && partner ? `/profile/${partner.id}` : `/chat/${chatId}/data`}>
-            <div className="flex items-center gap-3">
+            
+            <Link href={chatType === "PRIVATE" ? `/profile/${partner?.id}` : `/chat/${chatId}/data`}>
+            <div className="flex items-center gap-4">
               <div className="relative">
-                <Avatar image={chatAvatar} title={String(chatName)} size={44} /></div>
+                <Avatar image={chatAvatar} title={String(chatName)} size={44} />
+              </div>
               
-              <div>
-                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+              <div className="flex flex-col">
+                <h2 className="text-xl font-semibold text-white">
                   {chatName || "Чат"}
                 </h2>
                 
                 {/* Статус пользователя для приватного чата */}
                 {chatType === "PRIVATE" && partner && (
-                  <div className="flex items-center">
-                    <div className={`w-3 h-3 rounded-full relative right-6 ${getUserOnlineStatus(partner.id) ? 'bg-green-500' : 'bg-gray-500'}`} />
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <p className="text-md text-white/40">
-                        {getUserOnlineStatus(partner.id) ? "В сети" : getFormattedLastSeen(partner.id)}
-                      </p>
-                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <div className={`w-2.5 h-2.5 rounded-full ${getUserOnlineStatus(partner.id) ? 'bg-green-500' : 'bg-gray-500'}`} />
+                    <p className="text-sm text-white/40">
+                      {getUserOnlineStatus(partner.id) ? "В сети" : getFormattedLastSeen(partner.id)}
+                    </p>
                   </div>
                 )}
                 
                 {/* Для групповых чатов и каналов */}
                 {chatType !== "PRIVATE" && (
-                  <p className="text-xs text-white/40">
+                  <p className="text-sm text-white/40 mt-0.5">
                     {chatType === "CHANNEL" ? "Канал" : "Группа"} • {initialMembersCount} {initialMembersCount === 1 ? "участник" : "участников"}
                   </p>
                 )}
@@ -2773,72 +2795,80 @@ const handleUploadFilesWithCaption = async () => {
             </Link>
           </div>
           
-          <div className="flex gap-1">
-          <div className="flex items-center gap-2">
-          <button onClick={startAudioCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-full text-green-400 disabled:opacity-30 disabled:cursor-not-allowed" title="Аудиозвонок">
-            <Phone size={20} />
-          </button>
-          <button onClick={startVideoCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-full text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed" title="Видеозвонок">
-            <Video size={20} />
-          </button>
-</div>
-            <button
-              onClick={() => setIsSearchOpen(prev => !prev)}
-              className="p-2 hover:bg-white/5 rounded-4xl transition-colors"
-              title="Поиск по сообщениям"
-            >
-              <Search size={20} className="text-white/60" />
-            </button>
-            {(chatType === "GROUP" || chatType === "CHANNEL") && (
-              <button
-                onClick={() => setShowMembersDialog(true)}
-                className="p-2 hover:bg-white/5 rounded-4xl transition-colors"
-                title="Участники"
-              >
-                <Users size={20} className="text-white/60" />
+          {/* Правая часть - кнопки действий */}
+          <div className="flex items-center gap-3">
+            {/* Кнопки звонков */}
+            <div className="flex items-center gap-1">
+              <button onClick={startAudioCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Аудиозвонок">
+                <Phone size={20} />
               </button>
-            )}
-            <div className="relative">
-              <button
-                onClick={() => setShowChatMenu(prev => !prev)}
-                className="p-2 hover:bg-white/5 rounded-4xl transition-colors"
-              >
-                <MoreVertical size={20} className="text-white/60" />
+              <button onClick={startVideoCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Видеозвонок">
+                <Video size={20} />
               </button>
-              {showChatMenu && (
-                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-white/10 bg-[#121214] shadow-2xl z-50 p-1">
-                  <input
-                    ref={wallpaperInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleWallpaperUpload}
-                  />
-                  <button
-                    onClick={() => wallpaperInputRef.current?.click()}
-                    disabled={isChangingWallpaper}
-                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Изменить обои чата
-                  </button>
-                  <button
-                    onClick={handleRemoveChatWallpaper}
-                    disabled={isChangingWallpaper}
-                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Сбросить обои чата
-                  </button>
-                  {chatType === "PRIVATE" && partner && (
-                    <button
-                      onClick={handleToggleBlock}
-                      disabled={isBlockLoading}
-                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 text-red-400"
-                    >
-                      {iBlockedThem ? "Разблокировать" : "Заблокировать"}
-                    </button>
-                  )}
-                </div>
+            </div>
+            
+            <div className="w-px h-6 bg-white/20" />
+            
+            {/* Остальные кнопки */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsSearchOpen(prev => !prev)}
+                className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+                title="Поиск по сообщениям"
+              >
+                <Search size={20} className="text-white/60" />
+              </button>
+              {(chatType === "GROUP" || chatType === "CHANNEL") && (
+                <button
+                  onClick={() => setShowMembersDialog(true)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+                  title="Участники"
+                >
+                  <Users size={20} className="text-white/60" />
+                </button>
               )}
+              <div className="relative">
+                <button
+                  onClick={() => setShowChatMenu(prev => !prev)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  <MoreVertical size={20} className="text-white/60" />
+                </button>
+                {showChatMenu && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-white/10 bg-[#121214] shadow-2xl z-50 p-1">
+                    <input
+                      ref={wallpaperInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleWallpaperUpload}
+                    />
+                    <button
+                      onClick={() => wallpaperInputRef.current?.click()}
+                      disabled={isChangingWallpaper}
+                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50"
+                    >
+                      Изменить обои чата
+                    </button>
+                    <button
+                      onClick={handleRemoveChatWallpaper}
+                      disabled={isChangingWallpaper}
+                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50"
+                    >
+                      Сбросить обои чата
+                    </button>
+                    {chatType === "PRIVATE" && partner && (
+                      <button
+                        onClick={handleToggleBlock}
+                        disabled={isBlockLoading}
+                        className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 text-red-400"
+                      >
+                        {iBlockedThem ? "Разблокировать" : "Заблокировать"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2926,26 +2956,28 @@ const handleUploadFilesWithCaption = async () => {
               </div>
             </div>
           ) : (
-            messages
-              .filter((msg, idx, arr) => arr.findIndex(m => m.id === msg.id) === idx)
-              .map((msg, idx, arr) => {
-                const msgDate = new Date(msg.createdAt);
-                const prevDate = idx > 0 ? new Date(arr[idx - 1].createdAt) : null;
-                const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
-                const now = new Date();
-                const diffDays = Math.floor((now.setHours(0,0,0,0) - new Date(msgDate).setHours(0,0,0,0)) / 86400000);
-                const label = diffDays === 0 ? "Сегодня" : diffDays === 1 ? "Вчера" : msgDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: diffDays > 365 ? "numeric" : undefined });
-                return (
-                  <React.Fragment key={msg.id || idx}>
-                    {isNewDay && (
-                      <div className="flex justify-center my-5">
-                        <span className="text-sm text-white/50 font-medium px-4 py-1.5 bg-white/8 rounded-full backdrop-blur-sm">{label}</span>
-                      </div>
-                    )}
-                    {renderMessage(msg)}
-                  </React.Fragment>
-                );
-              })
+            <AnimatePresence mode="popLayout">
+              {messages
+                .filter((msg, idx, arr) => arr.findIndex(m => m.id === msg.id) === idx)
+                .map((msg, idx, arr) => {
+                  const msgDate = new Date(msg.createdAt);
+                  const prevDate = idx > 0 ? new Date(arr[idx - 1].createdAt) : null;
+                  const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
+                  const now = new Date();
+                  const diffDays = Math.floor((now.setHours(0,0,0,0) - new Date(msgDate).setHours(0,0,0,0)) / 86400000);
+                  const label = diffDays === 0 ? "Сегодня" : diffDays === 1 ? "Вчера" : msgDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: diffDays > 365 ? "numeric" : undefined });
+                  return (
+                    <React.Fragment key={msg.id || idx}>
+                      {isNewDay && (
+                        <div className="flex justify-center my-5">
+                          <span className="text-sm text-white/50 font-medium px-4 py-1.5 bg-white/8 rounded-full backdrop-blur-sm">{label}</span>
+                        </div>
+                      )}
+                      {renderMessage(msg)}
+                    </React.Fragment>
+                  );
+                })}
+            </AnimatePresence>
           )}
           <div ref={messagesEndRef} />
           </div>
@@ -3168,21 +3200,21 @@ const handleUploadFilesWithCaption = async () => {
                       onClick={() => imageInputRef.current?.click()} 
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
                     >
-                      <Image size={16} className="text-green-400" /> Фото
+                      <Image size={16} className="text-green-0" /> Фото
                     </button>
                     <button 
                       type="button" 
                       onClick={() => videoInputRef.current?.click()} 
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
                     >
-                      <Video size={16} className="text-blue-400" /> Видео
+                      <Video size={16} className="text-blue-0" /> Видео
                     </button>
                     <button 
                       type="button" 
                       onClick={() => fileInputRef2.current?.click()} 
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
                     >
-                      <File size={16} className="text-yellow-400" /> Файл
+                      <File size={16} className="text-yellow-0" /> Файл
                     </button>
                     <div className="h-px bg-white/10 my-1" />
                     <button 
@@ -3191,7 +3223,7 @@ const handleUploadFilesWithCaption = async () => {
                       disabled={isRecording || !!pendingAudioBlob}
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
                     >
-                      <Mic size={16} className="text-purple-400" /> Голосовое
+                      <Mic size={16} className="text-purple-0" /> Голосовое
                     </button>
                     <button 
                       type="button" 
@@ -3199,7 +3231,7 @@ const handleUploadFilesWithCaption = async () => {
                       disabled={isRecording}
                       className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
                     >
-                      <Video size={16} className="text-orange-400" /> Видеокружочек
+                      <Video size={16} className="text-orange-0" /> Видеокружочек
                     </button>
                   </div>
                 </motion.div>
@@ -3230,12 +3262,12 @@ const handleUploadFilesWithCaption = async () => {
       <button 
         type="submit" 
         disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite) || iBlockedThem || theyBlockedMe}
-        className="bg-[#7166D8] text-black p-3 rounded-full hover:bg-[#7166D8]/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="bg-[#7166D8] text-black p-3.5 rounded-full hover:bg-[#7166D8]/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSending ? (
-          <Loader2 className="animate-spin h-7 w-7" />
+          <Loader2 className="animate-spin h-7 w-7" color="white" />
         ) : (
-          <Send size={28} />
+          <SendHorizonal size={26} color="white" />
         )}
       </button>
       )}
