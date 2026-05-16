@@ -1249,7 +1249,7 @@ export default function RealTimeChat({
         setEditingMessage(null);
         setNewMessage("");
       } else {
-        const sentMessage = await sendMessage(chatId, newMessage.trim(), null, null, replyingTo?.id);
+        const sentMessage = await sendMessage(chatId, newMessage.trim(), null, null, null, replyingTo?.id);
         const formattedMessage = {
           ...sentMessage,
           reactions: sentMessage.reactions as { [key: string]: string[] } | null,
@@ -1714,10 +1714,10 @@ const confirmDeleteMessage = async () => {
     const element = document.getElementById(`message-${messageId}`);
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "center" });
-      element.classList.add("bg-orange-500/20");
+      element.classList.add("bg-white/10");
       setTimeout(() => {
-        element.classList.remove("bg-orange-500/20");
-      }, 2000);
+        element.classList.remove("bg-white/10");
+      }, 1500);
     }
   };
 
@@ -1805,16 +1805,22 @@ const confirmDeleteMessage = async () => {
     if (!message.replyTo) return null;
 
     const replyTo = message.replyTo;
-    const replyToName = replyTo.userId === currentUser.id ? "Вы" : (replyTo.user.displayName || replyTo.user.username);
-    const replyContent = replyTo.content ? (replyTo.content.length > 60 ? replyTo.content.substring(0, 60) + "…" : replyTo.content) : "[Медиа]";
+    if (!replyTo) return null;
+    const replyToName = replyTo.userId === currentUser.id ? "Вы" : (replyTo.user?.displayName || replyTo.user?.username || "Пользователь");
+    const replyContent = replyTo.content
+      ? (replyTo.content.length > 80 ? replyTo.content.substring(0, 80) + "…" : replyTo.content)
+      : replyTo.fileType?.startsWith("audio") ? "🎤 Голосовое"
+      : replyTo.fileType?.startsWith("image") ? "🖼️ Фото"
+      : replyTo.fileUrl ? "📎 Файл"
+      : "[Медиа]";
 
     return (
       <div
-        className="mx-3 mt-2 mb-0 rounded-lg bg-black/20 border-l-2 border-violet-400 pl-2 pr-2 py-1.5 cursor-pointer hover:bg-black/30 transition-colors"
+        className="mx-3 mb-0 rounded-xl bg-black/30 px-4 py-3 cursor-pointer hover:bg-black/40 transition-colors"
         onClick={(e) => { e.stopPropagation(); scrollToMessage(replyTo.id); }}
       >
-        <p className="text-[11px] font-semibold text-violet-300 truncate">{replyToName}</p>
-        <p className="text-[11px] text-white/50 truncate">{replyContent}</p>
+        <p className="text-base font-bold text-violet-200 truncate mb-1">{replyToName}</p>
+        <p className="text-base text-white/70 truncate">{replyContent}</p>
       </div>
     );
   };
@@ -2048,7 +2054,7 @@ const renderMessage = (message: Message) => {
           isOwn 
             ? "bg-[#7166D8] text-white" 
             : "bg-zinc-900/90 border-white/10 text-white"
-        }`}>
+        } ${message.replyTo ? 'pt-2' : ''}`}>
           {/* Превью ответа внутри пузыря */}
           {renderReplyPreview(message)}
           {/* {isOwn && <div className="absolute top-0 -right-3 w-0 h-0 
@@ -2058,7 +2064,7 @@ const renderMessage = (message: Message) => {
           
           {/* Имя отправителя в групповых чатах (для не-своих сообщений) */}
           {!isOwn && chatType !== "PRIVATE" && (
-            <p className="text-[11px] text-orange-400 mb-1 font-semibold uppercase tracking-wider">
+            <p className="text-[11px] text-orange-400 mb-1 font-semibold uppercase tracking-wider px-3 pt-2">
               {displayName}
             </p>
           )}
@@ -2092,7 +2098,7 @@ const renderMessage = (message: Message) => {
               {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </p>
             
-            {message.updatedAt !== message.createdAt && (
+            {new Date(message.updatedAt).getTime() - new Date(message.createdAt).getTime() > 2000 && (
               <Edit size={14} className="text-white/30" />
             )}
             
