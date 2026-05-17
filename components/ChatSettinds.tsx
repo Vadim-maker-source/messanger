@@ -596,6 +596,7 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
         {/* Quick Actions - Telegram Style */}
         {!isPrivate && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            {isAdmin && (
             <button
               onClick={() => {/* TODO: Add member */}}
               className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
@@ -605,6 +606,7 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
               </div>
               <p className="text-sm font-medium">Добавить</p>
             </button>
+            )}
 
             <button
               onClick={() => {/* TODO: Notifications */}}

@@ -228,24 +228,6 @@ export default function CreatePage() {
                   <p className="text-white/30 text-sm mt-1">Можно пропустить и добавить позже</p>
                 </div>
 
-                {/* Selected chips */}
-                {selectedUsers.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedUsers.map(u => (
-                      <motion.div key={u.id} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                        className="flex items-center gap-2 bg-white/10 rounded-full pl-1 pr-3 py-1">
-                        {u.avatarUrl
-                          ? <img src={u.avatarUrl} className="w-6 h-6 rounded-full object-cover" />
-                          : <div className="w-6 h-6 rounded-full bg-violet-500/30 flex items-center justify-center text-[10px] font-bold text-violet-300">{u.username?.[0]?.toUpperCase()}</div>}
-                        <span className="text-sm">{u.username}</span>
-                        <button onClick={() => toggleUser(u)} className="text-white/30 hover:text-white/70 ml-0.5">
-                          <X size={12} />
-                        </button>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-
                 {/* Search */}
                 <div className="relative">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />

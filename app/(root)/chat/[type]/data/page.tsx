@@ -1,4 +1,3 @@
-// app/chat/[type]/data/page.tsx
 import { getCurrentUser } from "@/app/lib/api/user";
 import { prisma } from "@/app/lib/prisma";
 import ChatSettings from "@/components/ChatSettinds";
@@ -12,7 +11,6 @@ export default async function ChatSettingsPage({ params }: { params: Promise<{ t
   const user = await getCurrentUser();
   if (!user) redirect("/auth");
 
-  // Сначала проверяем, это чат или сервер
   const chat = await prisma.chat.findUnique({
     where: { id },
     include: {

@@ -421,6 +421,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {isAdmin && (
           <button
             onClick={() => {/* TODO: Add member */}}
             className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
@@ -430,7 +431,9 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
             </div>
             <p className="text-sm font-medium">Добавить</p>
           </button>
+          )}
 
+          {isAdmin && (
           <button
             onClick={() => setShowChannelDialog(true)}
             className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
@@ -440,16 +443,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
             </div>
             <p className="text-sm font-medium">Канал</p>
           </button>
-
-          <button
-            onClick={() => {/* TODO: Search */}}
-            className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
-          >
-            <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
-              <Search size={20} className="text-green-400" />
-            </div>
-            <p className="text-sm font-medium">Поиск</p>
-          </button>
+          )}
 
           {isAdmin && (
             <button
@@ -563,7 +557,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                       <div className="text-left">
                         <p className="font-medium text-white/90">{chat.name}</p>
                         <p className="text-xs text-white/40">
-                          {chat.type === "CHANNEL" ? "Канал" : "Группа"} • {chat._count?.users || 0} участников
+                          {chat.type === "CHANNEL" ? "Канал" : "Группа"}
                         </p>
                       </div>
                     </button>
