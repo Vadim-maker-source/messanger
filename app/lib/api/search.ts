@@ -9,7 +9,6 @@ export async function globalSearch(query: string) {
 
   const searchTerm = query.toLowerCase();
 
-  // Поиск пользователей
   const users = await prisma.user.findMany({
     where: {
       OR: [
@@ -27,7 +26,6 @@ export async function globalSearch(query: string) {
     }
   });
 
-  // Поиск чатов (группы и приватные чаты, где пользователь участвует)
   const chats = await prisma.chat.findMany({
     where: {
       AND: [
@@ -58,7 +56,6 @@ export async function globalSearch(query: string) {
     take: 10
   });
 
-  // Форматируем чаты для отображения
   const formattedChats = chats.map(chat => {
     if (chat.type === 'PRIVATE') {
       const partner = chat.users.find(u => u.id !== currentUser.id);
@@ -81,7 +78,6 @@ export async function globalSearch(query: string) {
     };
   });
 
-  // Поиск серверов
   const servers = await prisma.server.findMany({
     where: {
       OR: [
@@ -118,7 +114,6 @@ export async function getOrCreateDirectChat(userId: string) {
   const currentUser = await getCurrentUser();
   if (!currentUser) throw new Error("Unauthorized");
 
-  // Ищем существующий приватный чат
   const existingChat = await prisma.chat.findFirst({
     where: {
       type: "PRIVATE",
@@ -134,7 +129,6 @@ export async function getOrCreateDirectChat(userId: string) {
 
   if (existingChat) return existingChat;
 
-  // Создаем новый приватный чат
   return await prisma.chat.create({
     data: {
       type: "PRIVATE",

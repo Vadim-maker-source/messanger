@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [profile, setProfile] = useState({ displayName: "", bio: "", status: "", telegram: "", vk: "", github: "", website: "" });
+  const [linkErrors, setLinkErrors] = useState<Record<string, string>>({});
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -100,7 +101,25 @@ export default function SettingsPage() {
     } finally { setIsUploadingAvatar(false); if (avatarRef.current) avatarRef.current.value = ""; }
   };
 
+  const validateLinks = () => {
+    const errors: Record<string, string> = {};
+    const rules: [string, string, RegExp][] = [
+      ["telegram", "Telegram", /^https?:\/\/(t\.me|telegram\.me)\/.+/i],
+      ["vk",       "VK",       /^https?:\/\/(vk\.com|vkontakte\.ru)\/.+/i],
+      ["github",   "GitHub",   /^https?:\/\/github\.com\/.+/i],
+      ["website",  "Сайт",     /^https?:\/\/.+\..+/i],
+    ];
+    for (const [key, label, pattern] of rules) {
+      const val = (profile as any)[key]?.trim();
+      if (val && !pattern.test(val)) errors[key] = `Неверная ссылка для ${label}`;
+    }
+    return errors;
+  };
+
   const saveProfile = async () => {
+    const errors = validateLinks();
+    setLinkErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setIsSavingProfile(true);
     try {
       await updateOwnProfile({ displayName: profile.displayName, bio: profile.bio, status: profile.status, socialLinks: { telegram: profile.telegram, vk: profile.vk, github: profile.github, website: profile.website } });
@@ -286,8 +305,11 @@ export default function SettingsPage() {
                     placeholder="О себе" rows={3} className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm resize-none focus:outline-none focus:border-violet-500/50 transition-colors" />
                   <div className="grid grid-cols-2 gap-2">
                     {[["telegram", "Telegram"], ["vk", "VK"], ["github", "GitHub"], ["website", "Сайт"]].map(([k, ph]) => (
-                      <input key={k} value={(profile as any)[k]} onChange={e => setProfile(p => ({ ...p, [k]: e.target.value }))}
-                        placeholder={ph} className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-violet-500/50 transition-colors" />
+                      <div key={k} className="flex flex-col gap-1">
+                        <input value={(profile as any)[k]} onChange={e => { setProfile(p => ({ ...p, [k]: e.target.value })); setLinkErrors(p => ({ ...p, [k]: "" })); }}
+                          placeholder={ph} className={`px-3 py-2.5 bg-white/5 border rounded-xl text-sm focus:outline-none transition-colors ${linkErrors[k] ? "border-red-500/60 focus:border-red-500" : "border-white/10 focus:border-violet-500/50"}`} />
+                        {linkErrors[k] && <span className="text-xs text-red-400">{linkErrors[k]}</span>}
+                      </div>
                     ))}
                   </div>
                   <button onClick={saveProfile} disabled={isSavingProfile}

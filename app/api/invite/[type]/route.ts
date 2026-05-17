@@ -6,7 +6,6 @@ export async function GET(
   { params }: { params: Promise<{ type: string }> | { type: string } }
 ) {
   try {
-    // Поддержка как Promise, так и обычного объекта для совместимости
     let code: string;
     if (params instanceof Promise) {
       const resolved = await params;
@@ -21,7 +20,6 @@ export async function GET(
 
     console.log("Looking for invite with code:", code);
 
-    // Ищем инвайт с включением и чата, и сервера
     const invite = await prisma.invite.findUnique({
       where: { code },
       include: {
@@ -41,7 +39,7 @@ export async function GET(
               take: 1,
               select: { 
                 id: true,
-                name: true  // Добавляем name
+                name: true
               }
             }
           }
@@ -53,21 +51,17 @@ export async function GET(
       return NextResponse.json({ error: "Invalid invite code" }, { status: 404 });
     }
 
-    // Проверка срока действия
     if (invite.expiresAt && invite.expiresAt < new Date()) {
       return NextResponse.json({ error: "Invite link has expired" }, { status: 410 });
     }
 
-    // Проверка лимита использований
     if (invite.maxUses && invite.uses >= invite.maxUses) {
       return NextResponse.json({ error: "Invite link has reached its usage limit" }, { status: 410 });
     }
 
-    // Определяем тип инвайта (сервер или чат)
     const isServerInvite = !!invite.serverId && invite.server;
     
     if (isServerInvite && invite.server) {
-      // Инвайт на сервер
       const firstChat = invite.server.chats[0];
       return NextResponse.json({
         type: 'SERVER',
@@ -93,7 +87,6 @@ export async function GET(
     } 
     
     if (invite.chat) {
-      // Инвайт на чат
       return NextResponse.json({
         type: 'CHAT',
         chat: {

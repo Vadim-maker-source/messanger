@@ -11,7 +11,9 @@ import {
   CheckCheck,
   Loader2,
   Brush,
-  SendHorizonal
+  SendHorizonal,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -2798,6 +2800,7 @@ const handleUploadFilesWithCaption = async () => {
           {/* Правая часть - кнопки действий */}
           <div className="flex items-center gap-3">
             {/* Кнопки звонков */}
+            {(!isChannel || userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin) && (
             <div className="flex items-center gap-1">
               <button onClick={startAudioCall} disabled={iBlockedThem || theyBlockedMe} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-white disabled:opacity-30 disabled:cursor-not-allowed" title="Аудиозвонок">
                 <Phone size={20} />
@@ -2806,6 +2809,7 @@ const handleUploadFilesWithCaption = async () => {
                 <Video size={20} />
               </button>
             </div>
+            )}
             
             <div className="w-px h-6 bg-white/20" />
             
@@ -2877,56 +2881,59 @@ const handleUploadFilesWithCaption = async () => {
         <AnimatePresence>
           {isSearchOpen && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="px-4 py-3 border-b border-white/10 bg-black/35 backdrop-blur-sm"
+              exit={{ opacity: 0, y: -8 }}
+              className="px-4 py-2.5 border-b border-white/10 backdrop-blur-md"
             >
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
                   <input
+                    autoFocus
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Поиск по сообщениям..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-violet-400"
+                    className="w-full bg-white/5 border border-white/10 rounded-full py-2 pl-10 pr-3 text-md text-white outline-none focus:border-violet-500/50 transition-colors placeholder:text-white/25"
                   />
+                  {searchQuery.trim() && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/30">
+                      {isSearching ? "..." : searchResults.length > 0 ? `${activeSearchIndex + 1}/${searchResults.length}` : "0"}
+                    </span>
+                  )}
                 </div>
+
+                <div className="flex items-center gap-1 bg-white/5 rounded-2xl p-1">
+                  <button
+                    type="button"
+                    disabled={!searchResults.length}
+                    onClick={() => goToSearchResult(activeSearchIndex - 1)}
+                    className="p-1.5 rounded-xl text-white/60 hover:bg-white/10 hover:text-white disabled:opacity-30 transition-colors"
+                    title="Предыдущее"
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                  <div className="w-px h-4 bg-white/10" />
+                  <button
+                    type="button"
+                    disabled={!searchResults.length}
+                    onClick={() => goToSearchResult(activeSearchIndex + 1)}
+                    className="p-1.5 rounded-xl text-white/60 hover:bg-white/10 hover:text-white disabled:opacity-30 transition-colors"
+                    title="Следующее"
+                  >
+                    <ChevronDown size={16} />
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  disabled={!searchResults.length}
-                  onClick={() => goToSearchResult(activeSearchIndex - 1)}
-                  className="px-2.5 py-2 rounded-xl bg-white/5 text-white/70 hover:bg-white/10 disabled:opacity-40"
+                  onClick={() => { setIsSearchOpen(false); setSearchQuery(""); }}
+                  className="p-2 rounded-2xl text-white/40 hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  disabled={!searchResults.length}
-                  onClick={() => goToSearchResult(activeSearchIndex + 1)}
-                  className="px-2.5 py-2 rounded-xl bg-white/5 text-white/70 hover:bg-white/10 disabled:opacity-40"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsSearchOpen(false);
-                    setSearchQuery("");
-                  }}
-                  className="p-2 rounded-xl bg-white/5 text-white/70 hover:bg-white/10"
-                >
-                  <X size={16} />
+                  <X size={15} />
                 </button>
               </div>
-              <p className="text-xs text-white/45 mt-2">
-                {isSearching
-                  ? "Идет поиск..."
-                  : searchQuery.trim()
-                    ? `Найдено: ${searchResults.length}`
-                    : "Введите текст для поиска"}
-              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -3170,7 +3177,6 @@ const handleUploadFilesWithCaption = async () => {
           )}
         </AnimatePresence>
 
-        {/* Input */}
         {/* Input - показываем только если не в режиме выбора */}
 {!isSelectionMode ? (
   <form onSubmit={handleSendMessage} className={canWrite ? "p-4" : ""}>

@@ -16,7 +16,6 @@ import {
   Check,
   Settings,
   Hash,
-  Activity,
   TrendingUp,
   MessageCircle,
   ChevronRight,
@@ -30,19 +29,19 @@ import {
   ChevronLeft,
   MoreVertical,
   Phone,
-  Video as VideoIcon
+  Video as VideoIcon,
+  Volume2,
+  Trash,
+  Blocks,
+  Ban
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { exportHistoryWithUser, getCurrentUser, getUserProfile, getUserMediaFiles, blockUser, unblockUser, getBlockStatus } from "@/app/lib/api/user";
 import { getOrCreatePrivateChat } from "@/app/lib/api/chat";
+import { startStreamCall } from "@/app/lib/api/stream-calls";
 import { useStatus } from "@/components/StatusProvider";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import Link from "next/link";
 
 interface UserProfile {
   id: string;
@@ -101,7 +100,7 @@ export default function UserProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "activity" | "mutual" | "media">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "mutual" | "media">("info");
   const [isExporting, setIsExporting] = useState(false);
   const [mediaFiles, setMediaFiles] = useState<any>(null);
   const [mediaTab, setMediaTab] = useState<"photos" | "videos" | "files" | "audio">("photos");
@@ -112,6 +111,7 @@ export default function UserProfilePage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAudioCallLoading, setIsAudioCallLoading] = useState(false);
   const [isVideoCallLoading, setIsVideoCallLoading] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   // Функции для модалки медиа
   const openMediaModal = (media: any, index: number) => {
@@ -279,7 +279,7 @@ export default function UserProfilePage() {
     try {
       setIsAudioCallLoading(true);
       const chat = await getOrCreatePrivateChat(type as string);
-      router.push(`/call/audio?chatId=${chat.id}&userId=${type}`);
+      await startStreamCall(chat.id, "audio");
     } catch (error) {
       console.error("Error starting audio call:", error);
     } finally {
@@ -291,11 +291,21 @@ export default function UserProfilePage() {
     try {
       setIsVideoCallLoading(true);
       const chat = await getOrCreatePrivateChat(type as string);
-      router.push(`/call/video?chatId=${chat.id}&userId=${type}`);
+      await startStreamCall(chat.id, "video");
     } catch (error) {
       console.error("Error starting video call:", error);
     } finally {
       setIsVideoCallLoading(false);
+    }
+  };
+
+  const deleteChat = async () => {
+    try {
+      const chat = await getOrCreatePrivateChat(type as string);
+      // TODO: Implement delete chat API call
+      console.log("Delete chat:", chat.id);
+    } catch (error) {
+      console.error("Error deleting chat:", error);
     }
   };
 
@@ -361,74 +371,15 @@ export default function UserProfilePage() {
             <ArrowLeft size={20} className="text-white/60" />
           </button>
           <h1 className="text-lg font-semibold">Профиль</h1>
-          <div className="flex gap-1">
-            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                  title="Действия"
-                >
-                  <MoreVertical size={20} className="text-white/60" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={copyProfileLink} className="cursor-pointer">
-                  <LinkIcon size={16} className="mr-2" />
-                  Скопировать ссылку
-                </DropdownMenuItem>
-                {!isOwnProfile && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        setIsDropdownOpen(false);
-                        setIsBlockLoading(true);
-                        try {
-                          if (iBlockedThem) {
-                            await unblockUser(user.id);
-                            setIBlockedThem(false);
-                          } else {
-                            await blockUser(user.id);
-                            setIBlockedThem(true);
-                          }
-                        } finally {
-                          setIsBlockLoading(false);
-                        }
-                      }}
-                      disabled={isBlockLoading}
-                      className="cursor-pointer text-red-400 focus:text-red-400"
-                    >
-                      {iBlockedThem ? "Разблокировать" : "Заблокировать"}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {!isOwnProfile && (
-              <button
-                onClick={startChat}
-                className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                title="Написать сообщение"
-              >
-                <Send size={20} className="text-violet-400" />
-              </button>
-            )}
-            {isOwnProfile && (
-              <button
-                onClick={() => router.push("/settings")}
-                className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                title="Настройки"
-              >
-                <Settings size={20} className="text-white/60" />
-              </button>
-            )}
+          <div className="flex gap-1 w-10">
+            
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Profile Header */}
-        <div className="bg-gradient-to-br from-violet-500/10 to-purple-500/10 rounded-3xl p-6 mb-6">
+        <div className="rounded-3xl p-6 mb-6">
           <div className="flex flex-col gap-4 items-center">
             {/* Avatar */}
             <div className="relative">
@@ -458,7 +409,7 @@ export default function UserProfilePage() {
               <div className="flex items-center justify-center md:justify-start gap-3 mt-2 flex-wrap">
                 {!isOnline && user.lastSeen && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-white/40">
+                    <span className="text-md text-white/40">
                       {getFormattedLastSeen(user.id)}
                     </span>
                   </div>
@@ -466,30 +417,81 @@ export default function UserProfilePage() {
               </div>
 
               {!isOwnProfile && (
-                <div className="flex justify-center md:justify-start gap-2 mt-4 flex-wrap">
+                <div className="flex justify-center gap-4 mt-4 flex-wrap">
                   <button
                     onClick={startChat}
-                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 text-sm"
+                    className="flex flex-col items-center gap-1 p-3 px-14 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors"
                   >
-                    <MessageSquare size={16} />
-                    <span>Сообщение</span>
+                    <MessageSquare size={26} className="text-[#7166D8]" />
+                    <span className="text-sm text-white/80">Чат</span>
                   </button>
                   <button
                     onClick={startAudioCall}
                     disabled={isAudioCallLoading}
-                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 text-sm"
+                    className="flex flex-col items-center gap-1 p-3 px-14 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors min-w-[60px] disabled:opacity-50"
                   >
-                    <Phone size={16} />
-                    <span>Аудио</span>
+                    <Phone size={26} className="text-[#7166D8]" />
+                    <span className="text-sm text-white/80">Звонок</span>
                   </button>
                   <button
                     onClick={startVideoCall}
                     disabled={isVideoCallLoading}
-                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 text-sm"
+                    className="flex flex-col items-center gap-1 p-3 px-14 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors min-w-[60px] disabled:opacity-50"
                   >
-                    <VideoIcon size={16} />
-                    <span>Видео</span>
+                    <VideoIcon size={26} className="text-[#7166D8]" />
+                    <span className="text-sm text-white/80">Видео</span>
                   </button>
+                  <button className="flex flex-col items-center gap-1 p-3 px-14 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors min-w-[60px]">
+                    <Volume2 size={26} className="text-[#7166D8]" />
+                    <span className="text-sm text-white/80">Звук</span>
+                  </button>
+                  <DropdownMenu open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
+                    <DropdownMenuTrigger>
+                      <button className="flex flex-col items-center gap-1 p-3 px-14 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors min-w-[60px]">
+                        <MoreVertical size={26} className="text-[#7166D8]" />
+                        <span className="text-sm text-white/80">Ещё</span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={copyProfileLink} className="cursor-pointer">
+                        <LinkIcon size={16} className="mr-2" />
+                        Скопировать ссылку
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          setIsMoreMenuOpen(false);
+                          setIsBlockLoading(true);
+                          try {
+                            if (iBlockedThem) {
+                              await unblockUser(user.id);
+                              setIBlockedThem(false);
+                            } else {
+                              await blockUser(user.id);
+                              setIBlockedThem(true);
+                            }
+                          } finally {
+                            setIsBlockLoading(false);
+                          }
+                        }}
+                        disabled={isBlockLoading}
+                        className="cursor-pointer text-red-400 focus:text-red-400"
+                      >
+                        <Ban size={16} className="mr-2" />
+                        {iBlockedThem ? "Разблокировать" : "Заблокировать"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setIsMoreMenuOpen(false);
+                          deleteChat();
+                        }}
+                        className="cursor-pointer text-red-400 focus:text-red-400"
+                      >
+                        <Trash size={16} className="mr-2" />
+                        Удалить чат
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               )}
             </div>
@@ -500,8 +502,8 @@ export default function UserProfilePage() {
         <div className="flex gap-2 border-b border-white/10 mb-6">
           <button
             onClick={() => setActiveTab("info")}
-            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-              activeTab === "info" ? "text-violet-400" : "text-white/40 hover:text-white/60"
+            className={`px-4 py-2 text-md font-medium transition-colors relative ${
+              activeTab === "info" ? "text-[#7166D8]" : "text-white/40 hover:text-white/60"
             }`}
           >
             Информация
@@ -512,24 +514,11 @@ export default function UserProfilePage() {
               />
             )}
           </button>
-          <button
-            onClick={() => setActiveTab("activity")}
-            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-              activeTab === "activity" ? "text-violet-400" : "text-white/40 hover:text-white/60"
-            }`}
-          >
-            Активность
-            {activeTab === "activity" && (
-              <motion.div
-                layoutId="activeTab"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-400"
-              />
-            )}
-          </button>
+
           <button
             onClick={() => setActiveTab("mutual")}
-            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-              activeTab === "mutual" ? "text-violet-400" : "text-white/40 hover:text-white/60"
+            className={`px-4 py-2 text-md font-medium transition-colors relative ${
+              activeTab === "mutual" ? "text-[#7166D8]" : "text-white/40 hover:text-white/60"
             }`}
           >
             Общие чаты {user.mutualChats && user.mutualChats.length > 0 && `(${user.mutualChats.length})`}
@@ -543,8 +532,8 @@ export default function UserProfilePage() {
           {!isOwnProfile && (
             <button
               onClick={() => setActiveTab("media")}
-              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-                activeTab === "media" ? "text-violet-400" : "text-white/40 hover:text-white/60"
+              className={`px-4 py-2 text-md font-medium transition-colors relative ${
+                activeTab === "media" ? "text-[#7166D8]" : "text-white/40 hover:text-white/60"
               }`}
             >
               Медиа
@@ -569,14 +558,23 @@ export default function UserProfilePage() {
               transition={{ duration: 0.3 }}
               className="space-y-6"
             >
+              {/* Username */}
+              <div className="bg-white/5 rounded-2xl p-6">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <Hash size={18} className="text-[#7166D8]" />
+                  Имя пользователя
+                </h3>
+                <p className="text-white/80 text-lg text-bold">@{user.username}</p>
+              </div>
+
               {/* Bio */}
               {(user.bio && user.canSeeProfileExtras !== false) && (
                 <div className="bg-white/5 rounded-2xl p-6">
                   <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <User size={18} className="text-violet-400" />
+                    <User size={18} className="text-[#7166D8]" />
                     О себе
                   </h3>
-                  <p className="text-white/80 leading-relaxed whitespace-pre-wrap">{user.bio}</p>
+                  <p className="text-white/80 leading-relaxed whitespace-pre-wrap text-lg">{user.bio}</p>
                 </div>
               )}
 
@@ -587,10 +585,10 @@ export default function UserProfilePage() {
                     Соцсети и ссылки
                   </h3>
                   <div className="space-y-2 text-sm">
-                    {user.socialLinks.telegram && <p className="text-white/80">Telegram: {user.socialLinks.telegram}</p>}
-                    {user.socialLinks.vk && <p className="text-white/80">VK: {user.socialLinks.vk}</p>}
-                    {user.socialLinks.github && <p className="text-white/80">GitHub: {user.socialLinks.github}</p>}
-                    {user.socialLinks.website && <p className="text-white/80">Website: {user.socialLinks.website}</p>}
+                    {user.socialLinks.telegram && <p className="text-white/80 text-lg">Telegram: <Link href={user.socialLinks.telegram} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">{user.socialLinks.telegram}</Link></p>}
+                    {user.socialLinks.vk && <p className="text-white/80 text-lg">VK: <a href={user.socialLinks.vk} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">{user.socialLinks.vk}</a></p>}
+                    {user.socialLinks.github && <p className="text-white/80 text-lg">GitHub: <a href={user.socialLinks.github} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">{user.socialLinks.github}</a></p>}
+                    {user.socialLinks.website && <p className="text-white/80 text-lg">Сайт: <a href={user.socialLinks.website} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">{user.socialLinks.website}</a></p>}
                     {!user.socialLinks.telegram && !user.socialLinks.vk && !user.socialLinks.github && !user.socialLinks.website && (
                       <p className="text-white/40">Пользователь не добавил ссылки.</p>
                     )}
@@ -613,81 +611,6 @@ export default function UserProfilePage() {
                   </div>
                 </div>
               )}
-            </motion.div>
-          )}
-
-          {activeTab === "activity" && (
-            <motion.div
-              key="activity"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-6"
-            >
-              {/* Activity Summary */}
-              {user.activity && (
-                <div className="bg-white/5 rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <Activity size={18} className="text-violet-400" />
-                    Активность
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-violet-400">{user.activity.totalMessages}</div>
-                      <div className="text-xs text-white/40">всего сообщений</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-violet-400">{user.activity.activeDays}</div>
-                      <div className="text-xs text-white/40">активных дней</div>
-                    </div>
-                  </div>
-
-                  {user.activity.mostActiveChat && (
-                    <div className="mt-4 p-4 bg-white/5 rounded-xl">
-                      <p className="text-sm text-white/60 mb-2">Самый активный чат</p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {user.activity.mostActiveChat.type === 'PRIVATE' ? (
-                            <User size={16} className="text-violet-400" />
-                          ) : (
-                            <Users size={16} className="text-green-400" />
-                          )}
-                          <span className="font-medium">{user.activity.mostActiveChat.name}</span>
-                        </div>
-                        <span className="text-sm text-violet-400">{user.activity.mostActiveChat.messagesCount} сообщений</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Detailed Activity */}
-              <div className="bg-white/5 rounded-2xl p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Clock size={18} className="text-violet-400" />
-                  Детальная активность
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-white/10">
-                    <span className="text-white/60">Зарегистрирован</span>
-                    <span className="text-white/80">{formatFullDate(user.createdAt)}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-white/10">
-                    <span className="text-white/60">Последняя активность</span>
-                    <span className="text-white/80">
-                      {isOnline ? "Сейчас онлайн" : formatFullDate(user.lastSeen)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-white/60">Статус</span>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
-                      <span className="text-white/80">{getStatusText()}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </motion.div>
           )}
 

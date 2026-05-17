@@ -6,7 +6,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    // Разворачиваем params если это Promise
     let id: string;
     if (params instanceof Promise) {
       const resolved = await params;

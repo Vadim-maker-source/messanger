@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Опционально: добавьте OPTIONS для CORS если нужно
 export async function OPTIONS() {
   return NextResponse.json({}, {
     headers: {
