@@ -53,9 +53,9 @@ export const StatusProvider: React.FC<StatusProviderProps> = ({ children, curren
     const days = Math.floor(diff / 86400000);
     
     if (minutes < 1) return "только что";
-    if (minutes < 60) return `${minutes} мин. назад`;
-    if (hours < 24) return `${hours} ч. назад`;
-    if (days < 7) return `${days} д. назад`;
+    if (minutes < 60) return `в сети ${minutes} мин. назад`;
+    if (hours < 24) return `в сети ${hours} ч. назад`;
+    if (days < 7) return `в сети ${days} д. назад`;
     return last.toLocaleDateString();
   }, []);
 

@@ -3198,40 +3198,40 @@ const handleUploadFilesWithCaption = async () => {
                     <button 
                       type="button" 
                       onClick={() => imageInputRef.current?.click()} 
-                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 text-gray-200 rounded-lg text-md"
                     >
-                      <Image size={16} className="text-green-0" /> Фото
+                      <Image size={20} className="text-white" /> Фото
                     </button>
                     <button 
                       type="button" 
                       onClick={() => videoInputRef.current?.click()} 
-                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 text-gray-200 rounded-lg text-md"
                     >
-                      <Video size={16} className="text-blue-0" /> Видео
+                      <Video size={20} className="text-white" /> Видео
                     </button>
                     <button 
                       type="button" 
                       onClick={() => fileInputRef2.current?.click()} 
-                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm"
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 text-gray-200 rounded-lg text-md"
                     >
-                      <File size={16} className="text-yellow-0" /> Файл
+                      <File size={20} className="text-white" /> Файл
                     </button>
                     <div className="h-px bg-white/10 my-1" />
                     <button 
                       type="button" 
                       onClick={startAudioRecording} 
                       disabled={isRecording || !!pendingAudioBlob}
-                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 text-gray-200 rounded-lg text-md disabled:opacity-50"
                     >
-                      <Mic size={16} className="text-purple-0" /> Голосовое
+                      <Mic size={20} className="text-white" /> Голосовое
                     </button>
                     <button 
                       type="button" 
                       onClick={startRoundVideoRecording} 
                       disabled={isRecording}
-                      className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg text-sm disabled:opacity-50"
+                      className="flex items-center gap-2 p-2 hover:bg-white/5 text-gray-200 rounded-lg text-md disabled:opacity-50"
                     >
-                      <Video size={16} className="text-orange-0" /> Видеокружочек
+                      <Video size={20} className="text-white" /> Видеокружочек
                     </button>
                   </div>
                 </motion.div>

@@ -274,7 +274,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
           ref={sidebarRef}
           animate={{ width: chatsWidth }}
           transition={{ duration: isResizing ? 0 : 0.3 }}
-          className="h-full bg-[#0f0f12] flex flex-col z-50 relative shadow-2xl"
+          className="h-full bg-[#1b1929dc] flex flex-col z-50 relative border-r border-white/5"
           style={{ minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
         >
           {/* Header */}

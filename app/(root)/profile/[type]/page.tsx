@@ -27,12 +27,22 @@ import {
   Music,
   Play,
   X,
-  ChevronLeft
+  ChevronLeft,
+  MoreVertical,
+  Phone,
+  Video as VideoIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { exportHistoryWithUser, getCurrentUser, getUserProfile, getUserMediaFiles, blockUser, unblockUser, getBlockStatus } from "@/app/lib/api/user";
 import { getOrCreatePrivateChat } from "@/app/lib/api/chat";
 import { useStatus } from "@/components/StatusProvider";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 
 interface UserProfile {
   id: string;
@@ -99,6 +109,9 @@ export default function UserProfilePage() {
   const [selectedMediaIndex, setSelectedMediaIndex] = useState<number>(0);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const [isBlockLoading, setIsBlockLoading] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isAudioCallLoading, setIsAudioCallLoading] = useState(false);
+  const [isVideoCallLoading, setIsVideoCallLoading] = useState(false);
 
   // Функции для модалки медиа
   const openMediaModal = (media: any, index: number) => {
@@ -262,6 +275,30 @@ export default function UserProfilePage() {
     }
   };
 
+  const startAudioCall = async () => {
+    try {
+      setIsAudioCallLoading(true);
+      const chat = await getOrCreatePrivateChat(type as string);
+      router.push(`/call/audio?chatId=${chat.id}&userId=${type}`);
+    } catch (error) {
+      console.error("Error starting audio call:", error);
+    } finally {
+      setIsAudioCallLoading(false);
+    }
+  };
+
+  const startVideoCall = async () => {
+    try {
+      setIsVideoCallLoading(true);
+      const chat = await getOrCreatePrivateChat(type as string);
+      router.push(`/call/video?chatId=${chat.id}&userId=${type}`);
+    } catch (error) {
+      console.error("Error starting video call:", error);
+    } finally {
+      setIsVideoCallLoading(false);
+    }
+  };
+
   const handleExportHistory = async () => {
     if (!type || isOwnProfile) return;
     try {
@@ -325,13 +362,48 @@ export default function UserProfilePage() {
           </button>
           <h1 className="text-lg font-semibold">Профиль</h1>
           <div className="flex gap-1">
-            <button
-              onClick={copyProfileLink}
-              className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-              title="Скопировать ссылку"
-            >
-              {copied ? <Check size={20} className="text-green-400" /> : <LinkIcon size={20} className="text-white/60" />}
-            </button>
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+                  title="Действия"
+                >
+                  <MoreVertical size={20} className="text-white/60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={copyProfileLink} className="cursor-pointer">
+                  <LinkIcon size={16} className="mr-2" />
+                  Скопировать ссылку
+                </DropdownMenuItem>
+                {!isOwnProfile && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        setIsDropdownOpen(false);
+                        setIsBlockLoading(true);
+                        try {
+                          if (iBlockedThem) {
+                            await unblockUser(user.id);
+                            setIBlockedThem(false);
+                          } else {
+                            await blockUser(user.id);
+                            setIBlockedThem(true);
+                          }
+                        } finally {
+                          setIsBlockLoading(false);
+                        }
+                      }}
+                      disabled={isBlockLoading}
+                      className="cursor-pointer text-red-400 focus:text-red-400"
+                    >
+                      {iBlockedThem ? "Разблокировать" : "Заблокировать"}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {!isOwnProfile && (
               <button
                 onClick={startChat}
@@ -354,39 +426,39 @@ export default function UserProfilePage() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Profile Header */}
-        <div className="bg-gradient-to-br from-violet-500/10 to-purple-500/10 rounded-3xl p-8 mb-8">
-          <div className="flex flex-col gap-8 items-center">
+        <div className="bg-gradient-to-br from-violet-500/10 to-purple-500/10 rounded-3xl p-6 mb-6">
+          <div className="flex flex-col gap-4 items-center">
             {/* Avatar */}
             <div className="relative">
-              <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden bg-gradient-to-br from-violet-500/20 to-purple-500/20">
+              <div className="w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden bg-gradient-to-br from-violet-500/20 to-purple-500/20">
                 {user.avatarUrl ? (
                   <img src={user.avatarUrl} className="w-full h-full object-cover" alt={user.displayName} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-5xl font-bold">
+                  <div className="w-full h-full flex items-center justify-center text-4xl font-bold">
                     {(user.displayName || user.username)[0].toUpperCase()}
                   </div>
                 )}
               </div>
-              <div className="absolute bottom-2 right-2">
-                <div className={`w-6 h-6 rounded-full border-2 border-[#0a0a0c] ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+              <div className="absolute bottom-1 right-1">
+                <div className={`w-5 h-5 rounded-full border-2 border-[#0a0a0c] ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
               </div>
             </div>
 
             {/* User Info */}
             <div className="flex flex-col text-center md:text-left items-center">
-              <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
-                <h1 className="text-3xl md:text-4xl font-bold">{user.displayName || user.username}</h1>
+              <div className="flex items-center justify-center md:justify-start gap-2 flex-wrap">
+                <h1 className="text-2xl md:text-3xl font-bold">{user.displayName || user.username}</h1>
                 {isOwnProfile && (
-                  <span className="px-2 py-1 bg-violet-500/20 text-violet-400 rounded-full text-xs">Это вы</span>
+                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 rounded-full text-xs">Это вы</span>
                 )}
               </div>
 
-              <div className="flex items-center justify-center md:justify-start gap-4 mt-4 flex-wrap">
+              <div className="flex items-center justify-center md:justify-start gap-3 mt-2 flex-wrap">
                 {!isOnline && user.lastSeen && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-white/40">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-white/40">
                       {getFormattedLastSeen(user.id)}
                     </span>
                   </div>
@@ -394,37 +466,29 @@ export default function UserProfilePage() {
               </div>
 
               {!isOwnProfile && (
-                <div className="flex justify-center md:justify-start gap-3 mt-6 flex-wrap">
+                <div className="flex justify-center md:justify-start gap-2 mt-4 flex-wrap">
                   <button
                     onClick={startChat}
-                    className="px-6 py-2 bg-violet-500 hover:bg-violet-600 rounded-xl font-medium transition-all flex items-center gap-2"
+                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 text-sm"
                   >
-                    <MessageSquare size={18} />
-                    Написать сообщение
+                    <MessageSquare size={16} />
+                    <span>Сообщение</span>
                   </button>
                   <button
-                    onClick={async () => {
-                      setIsBlockLoading(true);
-                      try {
-                        if (iBlockedThem) {
-                          await unblockUser(user.id);
-                          setIBlockedThem(false);
-                        } else {
-                          await blockUser(user.id);
-                          setIBlockedThem(true);
-                        }
-                      } finally {
-                        setIsBlockLoading(false);
-                      }
-                    }}
-                    disabled={isBlockLoading}
-                    className={`px-6 py-2 rounded-xl font-medium transition-all flex items-center gap-2 disabled:opacity-50 ${
-                      iBlockedThem
-                        ? "bg-white/10 hover:bg-white/20 text-white"
-                        : "bg-red-500/20 hover:bg-red-500/30 text-red-400"
-                    }`}
+                    onClick={startAudioCall}
+                    disabled={isAudioCallLoading}
+                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 text-sm"
                   >
-                    {iBlockedThem ? "Разблокировать" : "Заблокировать"}
+                    <Phone size={16} />
+                    <span>Аудио</span>
+                  </button>
+                  <button
+                    onClick={startVideoCall}
+                    disabled={isVideoCallLoading}
+                    className="px-4 py-1.5 bg-[#3390EC] hover:bg-[#2b82d4] rounded-lg font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 text-sm"
+                  >
+                    <VideoIcon size={16} />
+                    <span>Видео</span>
                   </button>
                 </div>
               )}
