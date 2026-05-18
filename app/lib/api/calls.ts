@@ -1,4 +1,3 @@
-// app/lib/api/vk-calls.ts
 "use server";
 
 import { VK } from 'vk-io';

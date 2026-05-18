@@ -175,11 +175,11 @@ export async function updateUserStatus(userId: string, isOnline: boolean) {
       }
     });
 
-    await pusherServer.trigger("presence", "user-status-change", {
+    pusherServer.trigger("presence", "user-status-change", {
       userId: updatedUser.id,
       isOnline: updatedUser.isOnline,
       lastActive: updatedUser.lastActive
-    });
+    }).catch((e) => console.error("[Pusher]", e?.message));
 
     return updatedUser;
   } catch (error) {

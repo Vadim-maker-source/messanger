@@ -274,11 +274,11 @@ export async function joinByInvite(code: string) {
     });
 
     // Отправляем событие для обновления сайдбара
-    await pusherServer.trigger(`user-${user.id}`, "sidebar-update", {
+    pusherServer.trigger(`user-${user.id}`, "sidebar-update", {
       type: 'server_joined',
       targetId: invite.serverId,
       timestamp: new Date()
-    });
+    }).catch((e) => console.error("[Pusher]", e?.message));
 
     const firstChat = updatedServer.chats[0];
     return { 
@@ -339,18 +339,18 @@ export async function joinByInvite(code: string) {
     });
 
     // Отправляем событие в чат
-    await pusherServer.trigger(String(invite.chatId), "new-member", {
+    pusherServer.trigger(String(invite.chatId), "new-member", {
       userId: user.id,
       userName: user.displayName || user.username,
       joinedAt: new Date()
-    });
+    }).catch((e) => console.error("[Pusher]", e?.message));
 
     // Отправляем событие для обновления сайдбара
-    await pusherServer.trigger(`user-${user.id}`, "sidebar-update", {
+    pusherServer.trigger(`user-${user.id}`, "sidebar-update", {
       type: 'chat_joined',
       targetId: invite.chatId,
       timestamp: new Date()
-    });
+    }).catch((e) => console.error("[Pusher]", e?.message));
 
     return { chat: invite.chat, member, type: 'CHAT' };
   }

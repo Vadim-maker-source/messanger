@@ -46,12 +46,12 @@ export async function POST(req: NextRequest) {
 
     const chatName = chat.name || chat.users.find((u) => u.id !== user.id)?.displayName || "Чат";
 
-    await Promise.all([
+    Promise.all([
       ...chat.users
         .filter((u) => u.id !== user.id)
         .map((u) => pusherServer.trigger(`user-${u.id}`, "incoming-call", { ...payload, chatName })),
       pusherServer.trigger(`user-${user.id}`, "outgoing-call", { ...payload, chatName }),
-    ]);
+    ]).catch((err) => console.error("[Pusher calls/stream error]", err?.message));
 
     return NextResponse.json({ success: true, data: { callId, streamCallType: STREAM_CALL_TYPE } });
   } catch (e: any) {

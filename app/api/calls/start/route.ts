@@ -91,10 +91,10 @@ export async function POST(req: Request) {
       chat.users.find((chatUser) => chatUser.id !== user.id)?.username ||
       "Личный чат";
 
-    await pusherServer.trigger(`user-${user.id}`, "outgoing-call", {
+    pusherServer.trigger(`user-${user.id}`, "outgoing-call", {
       ...payload,
       chatName: chatNameForCreator,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({ callId, streamCallType: STREAM_CALL_TYPE });
   } catch (error: any) {

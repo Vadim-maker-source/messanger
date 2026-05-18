@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       data: { updatedAt: new Date() },
     });
 
-    await pusherServer.trigger(chatId, "new-message", message);
+    pusherServer.trigger(chatId, "new-message", message).catch(() => {});
 
     return NextResponse.json({
       success: true,

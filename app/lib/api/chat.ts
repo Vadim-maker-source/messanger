@@ -732,7 +732,7 @@ export async function editMessage(messageId: string, newContent: string) {
     reactions: updatedMessage.reactions as { [key: string]: string[] } | null
   };
 
-  await pusherServer.trigger(message.chatId, "message-updated", formattedMessage);
+  pusherServer.trigger(message.chatId, "message-updated", formattedMessage).catch((e) => console.error("[Pusher]", e?.message));
   return formattedMessage;
 }
 
@@ -759,7 +759,7 @@ export async function deleteMessage(messageId: string) {
   });
 
   // Отправляем событие об удалении
-  await pusherServer.trigger(message.chatId, "message-deleted", messageId);
+  pusherServer.trigger(message.chatId, "message-deleted", messageId).catch((e) => console.error("[Pusher]", e?.message));
   
   return { success: true };
 }
@@ -833,7 +833,7 @@ export async function forwardMessage(messageId: string, targetChatId: string) {
     }
   });
 
-  await pusherServer.trigger(targetChatId, "new-message", forwardedMessage);
+  pusherServer.trigger(targetChatId, "new-message", forwardedMessage).catch((e) => console.error("[Pusher]", e?.message));
   return forwardedMessage;
 }
 
@@ -958,10 +958,10 @@ export async function addReaction(messageId: string, reaction: string) {
 
   const formattedReactions = reactions as { [key: string]: string[] } | null;
   
-  await pusherServer.trigger(message.chatId, "reaction-updated", { 
+  pusherServer.trigger(message.chatId, "reaction-updated", { 
     messageId, 
     reactions: formattedReactions 
-  });
+  }).catch((e) => console.error("[Pusher]", e?.message));
   
   return { ...updatedMessage, reactions: formattedReactions };
 }
@@ -993,10 +993,10 @@ export async function removeReaction(messageId: string, reaction: string) {
 
   const formattedReactions = reactions as { [key: string]: string[] } | null;
   
-  await pusherServer.trigger(message.chatId, "reaction-updated", { 
+  pusherServer.trigger(message.chatId, "reaction-updated", { 
     messageId, 
     reactions: formattedReactions 
-  });
+  }).catch((e) => console.error("[Pusher]", e?.message));
   
   return { ...updatedMessage, reactions: formattedReactions };
 }
@@ -1255,7 +1255,7 @@ export async function sendMessage(
     }
   });
 
-  await pusherServer.trigger(chatId, "new-message", message);
+  pusherServer.trigger(chatId, "new-message", message).catch((e) => console.error("[Pusher]", e?.message));
 
   // Обновляем updatedAt чата
   await prisma.chat.update({
@@ -1271,10 +1271,10 @@ export async function sendMessage(
 
   for (const member of chatMembers) {
     if (member.userId !== user.id) {
-      await pusherServer.trigger(`user-${member.userId}`, "unread-update", {
+      pusherServer.trigger(`user-${member.userId}`, "unread-update", {
         chatId,
         timestamp: new Date()
-      });
+      }).catch((e) => console.error("[Pusher]", e?.message));
     }
   }
 
@@ -1364,11 +1364,11 @@ export async function markMessagesAsRead(chatId: string, lastReadMessageId?: str
   );
 
   // Отправляем событие через Pusher о прочтении сообщений
-  await pusherServer.trigger(chatId, "messages-read", {
+  pusherServer.trigger(chatId, "messages-read", {
     userId: user.id,
     messageIds: messages.map(m => m.id),
     readAt: new Date()
-  });
+  }).catch((e) => console.error("[Pusher]", e?.message));
 
   return readReceipts;
 }
