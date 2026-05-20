@@ -32,7 +32,22 @@ export async function GET(
       );
     }
 
-    const messages = await getMessages(chatId);
+    const since = req.nextUrl.searchParams.get("since");
+
+    const messages = since
+      ? await prisma.message.findMany({
+          where: { chatId, createdAt: { gt: new Date(since) } },
+          include: {
+            user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+            replyTo: {
+              include: {
+                user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      : await getMessages(chatId);
 
     return NextResponse.json({
       success: true,

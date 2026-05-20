@@ -19,7 +19,14 @@ export async function PATCH(req: NextRequest) {
     const updated = await prisma.message.update({
       where: { id: messageId },
       data: { content: content.trim(), updatedAt: new Date() },
-      include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
+      include: {
+        user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        replyTo: {
+          include: {
+            user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+          },
+        },
+      },
     });
 
     await pusherServer.trigger(message.chatId, "message-updated", updated);

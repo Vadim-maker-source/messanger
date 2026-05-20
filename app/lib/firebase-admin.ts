@@ -1,0 +1,43 @@
+import admin from "firebase-admin";
+
+// Инициализируем один раз (singleton)
+if (!admin.apps.length) {
+  const serviceAccount = JSON.parse(
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}"
+  );
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
+
+export const messaging = admin.messaging();
+
+export async function sendPushNotification({
+  token,
+  title,
+  body,
+  data,
+}: {
+  token: string;
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+}) {
+  try {
+    await messaging.send({
+      token,
+      notification: { title, body },
+      data,
+      android: {
+        priority: "high",
+        notification: { sound: "default", channelId: "messages" },
+      },
+      apns: {
+        payload: { aps: { sound: "default", badge: 1 } },
+      },
+    });
+  } catch (err) {
+    // Токен устарел — очищаем
+    console.error("[FCM] send error:", err);
+  }
+}

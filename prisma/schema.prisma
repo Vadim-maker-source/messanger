@@ -23,6 +23,9 @@ model User {
   isOnline       Boolean   @default(false)
   lastActive     DateTime  @default(now())
   
+  // FCM push token для мобильных уведомлений
+  fcmToken       String?
+  
   settings       UserSettings?
 
   // Отношения

@@ -33,6 +33,9 @@ export const pusherClient = typeof window !== 'undefined'
         process.env.NEXT_PUBLIC_PUSHER_KEY!, 
         {
           cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "eu",
+          activityTimeout: 30000,
+          pongTimeout: 15000,
+          unavailableTimeout: 10000,
         }
       );
     })()

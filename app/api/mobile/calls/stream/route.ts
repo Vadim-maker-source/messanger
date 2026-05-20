@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { pusherServer } from "@/app/lib/pusher";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
+import { sendPushNotification } from "@/app/lib/firebase-admin";
 
 const STREAM_CALL_TYPE = "default";
 
-// POST /api/mobile/calls/stream  { chatId, type: "audio"|"video" }
 export async function POST(req: NextRequest) {
   try {
     const user = await getMobileUserFromRequest(req);
@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
 
     const chat = await prisma.chat.findFirst({
       where: { id: chatId, users: { some: { id: user.id } } },
-      include: { users: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
+      include: {
+        users: { select: { id: true, username: true, displayName: true, avatarUrl: true, fcmToken: true } },
+      },
     });
     if (!chat) return NextResponse.json({ success: false, error: "Chat not found" }, { status: 404 });
 
@@ -44,14 +46,37 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    const chatName = chat.name || chat.users.find((u) => u.id !== user.id)?.displayName || "Чат";
+    const chatName = (chat as any).name || chat.users.find((u) => u.id !== user.id)?.displayName || "Чат";
+    const callerName = user.displayName || user.username;
+
+    const recipients = chat.users.filter((u) => u.id !== user.id);
 
     Promise.all([
-      ...chat.users
-        .filter((u) => u.id !== user.id)
-        .map((u) => pusherServer.trigger(`user-${u.id}`, "incoming-call", { ...payload, chatName })),
+      ...recipients.map((u) =>
+        pusherServer.trigger(`user-${u.id}`, "incoming-call", { ...payload, chatName })
+      ),
       pusherServer.trigger(`user-${user.id}`, "outgoing-call", { ...payload, chatName }),
     ]).catch((err) => console.error("[Pusher calls/stream error]", err?.message));
+
+    // FCM: входящий звонок — высокоприоритетное уведомление
+    recipients
+      .filter((u) => u.fcmToken)
+      .forEach((u) => {
+        sendPushNotification({
+          token: u.fcmToken!,
+          title: callType === "video" ? "📹 Входящий видеозвонок" : "📞 Входящий звонок",
+          body: callerName,
+          data: {
+            type: "call",
+            callId,
+            callType,
+            chatId,
+            chatName,
+            callerName,
+            callerId: user.id,
+          },
+        }).catch(() => {});
+      });
 
     return NextResponse.json({ success: true, data: { callId, streamCallType: STREAM_CALL_TYPE } });
   } catch (e: any) {
