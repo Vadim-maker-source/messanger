@@ -1,13 +1,15 @@
 import admin from "firebase-admin";
 
-// Инициализируем один раз (singleton)
 if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}"
-  );
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  try {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY ?? "{}";
+    const serviceAccount = JSON.parse(raw);
+    if (serviceAccount.project_id) {
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    }
+  } catch (e) {
+    console.error("[FCM] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", e);
+  }
 }
 
 export const messaging = admin.messaging();
