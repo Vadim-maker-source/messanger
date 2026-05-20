@@ -5,6 +5,7 @@ import { generateAvatarColor } from "@/lib/avatar";
 import { prisma } from "../prisma";
 import { getCurrentUser } from "./user";
 import { pusherServer } from "../pusher";
+import { sendPushNotification } from "../firebase-admin";
 
 interface CreateData {
   name: string;
@@ -1262,6 +1263,34 @@ export async function sendMessage(
     where: { id: chatId },
     data: { updatedAt: new Date() }
   });
+
+  // FCM: уведомляем участников чата
+  const chatWithUsers = await prisma.chat.findUnique({
+    where: { id: chatId },
+    include: {
+      users: { select: { id: true, fcmToken: true } },
+      members: { select: { userId: true } },
+    }
+  });
+
+  if (chatWithUsers) {
+    const senderName = user.displayName || user.username;
+    const msgText = message.fileUrl
+      ? (message.fileType === "IMAGE" ? "📷 Фото" : message.fileType === "VIDEO" ? "🎥 Видео" : message.fileType === "AUDIO" ? "🎤 Голосовое" : "📎 Файл")
+      : (message.content || "Сообщение");
+    const chatTitle = chatWithUsers.name || senderName;
+
+    chatWithUsers.users
+      .filter((u) => u.id !== user.id && u.fcmToken)
+      .forEach((u) => {
+        sendPushNotification({
+          token: u.fcmToken!,
+          title: chatTitle,
+          body: `${senderName}: ${msgText}`,
+          data: { type: "message", chatId, messageId: message.id },
+        }).catch(() => {});
+      });
+  }
 
   // Отправляем событие для обновления сайдбара
   const chatMembers = await prisma.chatMember.findMany({

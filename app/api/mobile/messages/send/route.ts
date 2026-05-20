@@ -62,12 +62,14 @@ export async function POST(req: NextRequest) {
     chat.users
       .filter((u) => u.id !== user.id && u.fcmToken)
       .forEach((u) => {
+        console.log(`[FCM] sending to user ${u.id}, token: ${u.fcmToken?.slice(0, 20)}...`);
         sendPushNotification({
           token: u.fcmToken!,
           title: chatTitle,
           body: `${senderName}: ${msgText}`,
           data: { type: "message", chatId, messageId: message.id },
-        }).catch(() => {});
+        }).then(() => console.log(`[FCM] sent ok to ${u.id}`))
+          .catch((e) => console.error(`[FCM] failed for ${u.id}:`, e));
       });
 
     return NextResponse.json({ success: true, data: message });
