@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { getCurrentUser } from "@/app/lib/api/user";
 import { pusherServer } from "@/app/lib/pusher";
+import { sendPushNotification } from "@/app/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
       where: { id: chatId, users: { some: { id: user.id } } },
       include: {
         users: {
-          select: { id: true, username: true, displayName: true, avatarUrl: true },
+          select: { id: true, username: true, displayName: true, avatarUrl: true, fcmToken: true },
         },
       },
     });
@@ -95,6 +96,20 @@ export async function POST(req: Request) {
       ...payload,
       chatName: chatNameForCreator,
     }).catch(() => {});
+
+    // FCM: уведомление о входящем звонке
+    const callerName = (user.displayName || user.username) ?? "Пользователь";
+    chat.users
+      .filter((u) => u.id !== user.id && u.fcmToken)
+      .forEach((u) => {
+        const chatName = chat.name || user.displayName || user.username || "Звонок";
+        sendPushNotification({
+          token: u.fcmToken!,
+          title: type === "video" ? "📹 Входящий видеозвонок" : "📞 Входящий звонок",
+          body: callerName,
+          data: { type: "call", callId, callType: type, chatId, chatName, callerName, callerId: user.id },
+        }).catch(() => {});
+      });
 
     return NextResponse.json({ callId, streamCallType: STREAM_CALL_TYPE });
   } catch (error: any) {
