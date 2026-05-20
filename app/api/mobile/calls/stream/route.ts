@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     };
 
     const chatName = (chat as any).name || chat.users.find((u) => u.id !== user.id)?.displayName || "Чат";
-    const callerName = user.displayName || user.username;
+    const callerName = (user.displayName || user.username) ?? "Пользователь";
 
     const recipients = chat.users.filter((u) => u.id !== user.id);
 
