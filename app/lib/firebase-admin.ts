@@ -39,14 +39,15 @@ export async function sendPushNotification({
   try {
     await messaging.send({
       token,
-      notification: { title, body },
-      data,
+      // data-only message: Flutter handles display via flutter_local_notifications
+      // This prevents duplicate notifications (system + flutter_local_notifications)
+      data: {
+        title,
+        body,
+        ...(data ?? {}),
+      },
       android: {
         priority: "high",
-        notification: { sound: "default", channelId: "calls" },
-      },
-      apns: {
-        payload: { aps: { sound: "default", badge: 1 } },
       },
     });
   } catch (err) {
