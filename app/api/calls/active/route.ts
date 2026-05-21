@@ -1,10 +1,29 @@
 import { NextResponse } from "next/server";
+import { StreamClient } from "@stream-io/node-sdk";
 import { prisma } from "@/app/lib/prisma";
 import { getCurrentUser } from "@/app/lib/api/user";
 
 export const dynamic = "force-dynamic";
 
 const STREAM_CALL_TYPE = "default";
+
+async function getStreamParticipantCount(callId: string): Promise<number> {
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
+    const apiSecret = process.env.STREAM_API_SECRET;
+    if (!apiKey || !apiSecret) return -1;
+
+    const client = new StreamClient(apiKey, apiSecret);
+    const response = await client.video.getCall({
+      type: STREAM_CALL_TYPE,
+      id: callId,
+    });
+    return response.call?.session?.participants?.length ?? 0;
+  } catch {
+    // Звонок не существует в Stream — считаем пустым
+    return 0;
+  }
+}
 
 export async function GET() {
   try {
@@ -13,7 +32,7 @@ export async function GET() {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const call = await prisma.call.findFirst({
+    const calls = await prisma.call.findMany({
       where: {
         status: { in: ["RINGING", "ACTIVE"] },
         chat: { users: { some: { id: user.id } } },
@@ -34,37 +53,68 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!call) {
+    if (calls.length === 0) {
       return NextResponse.json({ hasCall: false });
     }
 
-    const streamCallId = call.streamCallId;
+    // Для ACTIVE звонков проверяем реальных участников через Stream API
+    const toEnd: string[] = [];
+    let activeCall = null;
+
+    for (const call of calls) {
+      if (call.status === "ACTIVE") {
+        const streamCallId = call.streamCallId.includes(":")
+          ? call.streamCallId.split(":").slice(1).join(":")
+          : call.streamCallId;
+
+        const participants = await getStreamParticipantCount(streamCallId);
+        if (participants === 0) {
+          toEnd.push(call.id);
+          continue;
+        }
+      }
+      if (!activeCall) activeCall = call;
+    }
+
+    // Завершаем пустые звонки
+    if (toEnd.length > 0) {
+      await prisma.call.updateMany({
+        where: { id: { in: toEnd } },
+        data: { status: "ENDED" },
+      });
+    }
+
+    if (!activeCall) {
+      return NextResponse.json({ hasCall: false });
+    }
+
+    const streamCallId = activeCall.streamCallId;
     const callId = streamCallId.includes(":")
       ? streamCallId.split(":").slice(1).join(":")
       : streamCallId;
 
     const chatName =
-      call.chat.name ||
-      call.chat.users.find((chatUser) => chatUser.id !== user.id)?.displayName ||
-      call.chat.users.find((chatUser) => chatUser.id !== user.id)?.username ||
+      activeCall.chat.name ||
+      activeCall.chat.users.find((u) => u.id !== user.id)?.displayName ||
+      activeCall.chat.users.find((u) => u.id !== user.id)?.username ||
       "Личный чат";
 
     const payload = {
       callId,
       streamCallType: STREAM_CALL_TYPE,
-      type: call.type === "AUDIO" ? "audio" : "video",
-      chatId: call.chatId,
+      type: activeCall.type === "AUDIO" ? "audio" : "video",
+      chatId: activeCall.chatId,
       chatName,
       from: {
-        id: call.createdBy.id,
-        username: call.createdBy.username,
-        displayName: call.createdBy.displayName,
-        avatarUrl: call.createdBy.avatarUrl ?? null,
+        id: activeCall.createdBy.id,
+        username: activeCall.createdBy.username,
+        displayName: activeCall.createdBy.displayName,
+        avatarUrl: activeCall.createdBy.avatarUrl ?? null,
       },
-      createdAt: call.createdAt.toISOString(),
+      createdAt: activeCall.createdAt.toISOString(),
     };
 
-    const role = call.createdById === user.id ? "outgoing" : "incoming";
+    const role = activeCall.createdById === user.id ? "outgoing" : "incoming";
     return NextResponse.json({ hasCall: true, role, payload });
   } catch (error: any) {
     return NextResponse.json(
