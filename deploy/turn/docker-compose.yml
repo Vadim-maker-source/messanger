@@ -1,0 +1,16 @@
+services:
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: coturn
+    restart: unless-stopped
+    # host-режим обязателен: иначе Docker не сможет проброcить весь
+    # UDP-диапазон relay-портов (49152-65535) корректно
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

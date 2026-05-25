@@ -26,14 +26,16 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ message: "Invalid payload" }, { status: 400 });
     }
 
-    const streamCallId = `default:${callId}`;
-    const call = await prisma.call.findFirst({
-      where: {
-        streamCallId,
-        chat: { users: { some: { id: user.id } } },
-      },
-      select: { id: true },
-    });
+    // Ищем call по streamCallId — пробуем без префикса (WebRTC) и с префиксом (Stream)
+    const call =
+      (await prisma.call.findFirst({
+        where: { streamCallId: callId, chat: { users: { some: { id: user.id } } } },
+        select: { id: true },
+      })) ??
+      (await prisma.call.findFirst({
+        where: { streamCallId: `default:${callId}`, chat: { users: { some: { id: user.id } } } },
+        select: { id: true },
+      }));
 
     if (!call) {
       return NextResponse.json({ message: "Call not found" }, { status: 404 });

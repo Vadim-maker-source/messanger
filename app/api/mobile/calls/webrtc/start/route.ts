@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 import { pusherServer } from "@/app/lib/pusher";
-import { sendPushNotification } from "@/app/lib/firebase-admin";
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const chatId = String(body.chatId || "");
-    const type = body.type === "audio" ? "AUDIO" : "VIDEO";
+    const type = body.type === "audio" ? "audio" : "video";
     if (!chatId) {
       return NextResponse.json({ success: false, error: "chatId is required" }, { status: 400 });
     }
@@ -35,24 +35,22 @@ export async function POST(request: NextRequest) {
     }
 
     const callId = `chat_${chatId}_${Date.now()}`;
-    const call = await prisma.call.create({
+    await prisma.call.create({
       data: {
         chatId,
         createdById: user.id,
         status: "RINGING",
-        type,
+        type: type === "audio" ? "AUDIO" : "VIDEO",
         streamCallId: callId,
       },
-      select: { id: true, type: true, status: true, streamCallId: true },
     });
 
-    const callTypeStr = type === "AUDIO" ? "audio" : "video";
-
-    // === PUSHER: отправляем события всем участникам ===
+    // === PUSHER ===
     const payload = {
       callId,
-      type: callTypeStr,
+      type,
       chatId,
+      peerId: chat.users.find((u) => u.id !== user.id)?.id || null,
       from: {
         id: user.id,
         username: user.username,
@@ -62,25 +60,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    // Входящий звонок — всем кроме отправителя
-    await Promise.all(
-      chat.users
-        .filter((u) => u.id !== user.id)
-        .map((u) => {
-          const chatNameForRecipient =
-            chat.name ||
-            chat.users.find((chatUser) => chatUser.id !== u.id)?.displayName ||
-            chat.users.find((chatUser) => chatUser.id !== u.id)?.username ||
-            "Личный чат";
-
-          return pusherServer.trigger(`user-${u.id}`, "incoming-call", {
-            ...payload,
-            chatName: chatNameForRecipient,
-          });
-        }),
-    );
-
-    // Исходящий звонок — отправителю
+    // Исходящий — отправителю
     const chatNameForCreator =
       chat.name ||
       chat.users.find((chatUser) => chatUser.id !== user.id)?.displayName ||
@@ -92,28 +72,7 @@ export async function POST(request: NextRequest) {
       chatName: chatNameForCreator,
     }).catch(() => {});
 
-    // FCM уведомления
-    const callerName = (user.displayName || user.username) ?? "Пользователь";
-    chat.users
-      .filter((u) => u.id !== user.id && u.fcmToken)
-      .forEach((u) => {
-        const chatName = chat.name || user.displayName || user.username || "Звонок";
-        sendPushNotification({
-          token: u.fcmToken!,
-          title: callTypeStr === "video" ? "📹 Входящий видеозвонок" : "📞 Входящий звонок",
-          body: callerName,
-          data: { type: "call", callId, callType: callTypeStr, chatId, chatName, callerName, callerId: user.id },
-        }).catch(() => {});
-      });
-
-    return NextResponse.json({
-      success: true,
-      call: {
-        callId,
-        type: callTypeStr,
-        status: call.status,
-      },
-    });
+    return NextResponse.json({ success: true, callId, type });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || "Failed to start call" },

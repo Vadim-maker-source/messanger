@@ -41,7 +41,6 @@ import { useStatus } from "./StatusProvider";
 import { useSettings } from "./SettingsProvider";
 import { canViewUserProfile, removeChatWallpaper, uploadChatWallpaper, blockUser, unblockUser, getBlockStatus } from "@/app/lib/api/user";
 import Link from "next/link";
-import { startStreamCall } from "@/app/lib/api/stream-calls";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 import LoaderCreative from "./loader";
@@ -1979,32 +1978,53 @@ const deleteSelectedMessages = async () => {
   return <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{message.content}</p>;
 };
 
-// Stream: старт звонка (глобальный слой поймает через Pusher)
-const startVideoCall = async () => {
+// WebRTC: старт звонка — UI показываем мгновенно через custom event
+const startCall = async (type: "audio" | "video") => {
   if (iBlockedThem || theyBlockedMe) {
     toast.error("Нельзя позвонить заблокированному пользователю");
     return;
   }
   try {
-    await startStreamCall(chatId, "video");
-    toast.success("Звонок создан");
+    const res = await fetch("/api/calls/webrtc/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, type }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: "Не удалось начать звонок" }));
+      throw new Error(err.message || "Не удалось начать звонок");
+    }
+    const data = await res.json();
+    // Вычисляем peerId (собеседника) из partner (прямой объект) или chatMembers (ChatMember)
+    const peerMember = partner || chatMembers?.find((m: any) => m.user.id !== currentUser.id);
+    const peerId: string | null = peerMember
+      ? ("user" in peerMember ? (peerMember as any).user.id : (peerMember as any).id)
+      : null;
+
+    // Мгновенно показываем UI звонка через custom event (не ждём Pusher)
+    window.dispatchEvent(new CustomEvent("global-call-outgoing", {
+      detail: {
+        callId: data.callId,
+        type,
+        chatId,
+        peerId,
+        chatName: chatName || partner?.displayName || partner?.username || "Собеседник",
+        from: {
+          id: currentUser.id,
+          username: currentUser.username,
+          displayName: currentUser.displayName,
+          avatarUrl: currentUser.avatarUrl || null,
+        },
+        createdAt: new Date().toISOString(),
+      }
+    }));
   } catch (e: any) {
     toast.error(e?.message || "Не удалось начать звонок");
   }
 };
 
-const startAudioCall = async () => {
-  if (iBlockedThem || theyBlockedMe) {
-    toast.error("Нельзя позвонить заблокированному пользователю");
-    return;
-  }
-  try {
-    await startStreamCall(chatId, "audio");
-    toast.success("Звонок создан");
-  } catch (e: any) {
-    toast.error(e?.message || "Не удалось начать звонок");
-  }
-};
+const startVideoCall = () => startCall("video");
+const startAudioCall = () => startCall("audio");
 
 const renderMessage = (message: Message) => {
   const isOwn = message.userId === currentUser.id;

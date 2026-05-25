@@ -175,6 +175,9 @@ model Call {
   // Stream Call identifier (e.g. "messanger:call_...")
   streamCallId String     @unique
 
+  // SDP offer for WebRTC (хранится, чтобы получатель мог получить его при опоздании)
+  offerSdp    String?
+
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

@@ -1,846 +1,190 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Call,
-  CallControls,
-  SpeakerLayout,
-  StreamCall,
-  StreamTheme,
-  StreamVideo,
-  StreamVideoClient,
-} from "@stream-io/video-react-sdk";
-import "@stream-io/video-react-sdk/dist/css/styles.css";
+import { useEffect, useRef, useState } from "react";
 import { pusherClient } from "@/app/lib/pusher";
-import { Minimize2, Phone, PhoneOff, Video } from "lucide-react";
+import Avatar from "@/components/Avatar";
+import { Minimize2, Phone, PhoneOff, Video, Mic, MicOff, VideoOff, Wifi, WifiOff, Monitor, MonitorOff, RefreshCw } from "lucide-react";
 
-type CallSize = "mini" | "medium" | "full";
-
-type IncomingPayload = {
-  callId: string;
-  streamCallType: string;
-  type: "audio" | "video";
-  chatId: string;
-  chatName?: string;
-  from: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatarUrl: string | null;
-  };
-  createdAt: string;
+// Fallback-конфиг (только STUN) на случай, если /api/calls/ice-config ещё не
+// успел ответить или вернул ошибку. Боевые TURN-креды читаются с сервера —
+// см. app/api/calls/ice-config/route.ts и app/lib/ice-config.ts.
+const ICE_FALLBACK: RTCConfiguration = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+  iceCandidatePoolSize: 2,
+  bundlePolicy: "max-bundle",
+  rtcpMuxPolicy: "require",
 };
+type Sz = "mini" | "medium" | "full";
+type CP = { callId: string; type: "audio" | "video"; chatId: string; chatName?: string; peerId?: string | null; from: { id: string; username: string; displayName: string; avatarUrl: string | null }; createdAt: string };
+type Props = { currentUser: { id: string; username: string; displayName: string; avatarUrl?: string | null } };
+type R = { x: number; y: number; width: number; height: number };
+type H = "top" | "right" | "bottom" | "left" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+const MW = 280, MH = 170, TO = 60_000;
+function cr(sz: Exclude<Sz, "full">): R { const w = sz === "mini" ? 320 : 560, h = sz === "mini" ? 210 : 420; return { x: Math.max(16, (innerWidth - w) / 2), y: Math.max(16, (innerHeight - h) / 2), width: w, height: h }; }
+function cl(r: R): R { return { ...r, x: Math.max(0, Math.min(r.x, innerWidth - r.width)), y: Math.max(0, Math.min(r.y, innerHeight - r.height)) }; }
 
-type OutgoingPayload = Omit<IncomingPayload, "from"> & {
-  from?: IncomingPayload["from"];
-};
+export default function GCL({ currentUser }: Props) {
+  const [sz, setSz] = useState<Sz>("medium");
+  const [mini, setMini] = useState(false);
+  const [vis, setVis] = useState(false);
+  const [act, setAct] = useState(false);
+  const [conn, setConn] = useState("new");
+  const [pos, setPos] = useState<R>(() => cr("medium"));
+  const [inc, setInc] = useState<CP | null>(null);
+  const [out, setOut] = useState<CP | null>(null);
+  const [mut, setMut] = useState(false);
+  const [vidOff, setVidOff] = useState(false);
+  const [shr, setShr] = useState(false);
+  const [rem, setRem] = useState<MediaStream | null>(null);
+  const [ring, setRing] = useState(false);
+  const [endR, setEndR] = useState<"" | "peer-left" | "lost">("");
 
-type Props = {
-  currentUser: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatarUrl?: string | null;
-  };
-};
+  const dr = useRef<{ ox: number; oy: number } | null>(null);
+  const rr = useRef<{ h: H; sx: number; sy: number; sr: R } | null>(null);
+  const lr = useRef<MediaStream | null>(null);
+  const srRef = useRef<MediaStream | null>(null);
+  const rv = useRef<HTMLVideoElement>(null);
+  const lv = useRef<HTMLVideoElement>(null);
+  const pc = useRef<RTCPeerConnection | null>(null);
+  const pr = useRef<any[]>([]);
+  const jr = useRef(false);
+  const cidR = useRef<string | null>(null);
+  const pidR = useRef<string | null>(null);
+  const actR = useRef(false);
+  const endRR = useRef("");
+  const iceR = useRef<RTCConfiguration>(ICE_FALLBACK);
+  // Зеркала out/inc через ref — нужны для callback'ов, захваченных в useEffect.
+  // Без них setTimeout(startOut, 300) видит state от первого рендера (null),
+  // и звонок никогда не доходит до createOffer.
+  const outR = useRef<CP | null>(null);
+  const incR = useRef<CP | null>(null);
 
-type Rect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+  const p = inc ?? out;
+  const iv = p?.type === "video";
+  useEffect(() => { cidR.current = p?.callId ?? null; }, [p?.callId]);
+  useEffect(() => { pidR.current = inc ? inc.from.id : (out?.peerId ?? null); }, [inc, out]);
+  useEffect(() => { actR.current = act; }, [act]);
+  useEffect(() => { endRR.current = endR; }, [endR]);
+  useEffect(() => { actR.current = act; }, [act]);
+  useEffect(() => { endRR.current = endR; }, [endR]);
+  useEffect(() => { outR.current = out; }, [out]);
+  useEffect(() => { incR.current = inc; }, [inc]);
 
-type ResizeHandle =
-  | "top"
-  | "right"
-  | "bottom"
-  | "left"
-  | "top-left"
-  | "top-right"
-  | "bottom-left"
-  | "bottom-right";
+  const upStatus = async (cid: string, st: "ACTIVE" | "ENDED" | "DECLINED") => { try { await fetch("/api/calls/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callId: cid, status: st }) }); } catch {} };
+  const cln = async () => { pc.current?.close(); pc.current = null; lr.current?.getTracks().forEach(t => t.stop()); lr.current = null; srRef.current?.getTracks().forEach(t => t.stop()); srRef.current = null; rem?.getTracks().forEach(t => t.stop()); setRem(null); pr.current = []; jr.current = false; cidR.current = null; pidR.current = null; setVis(false); setAct(false); setConn("new"); setEndR(""); setInc(null); setOut(null); setMini(false); setMut(false); setVidOff(false); setShr(false); setRing(false); };
 
-const MIN_WIDTH = 280;
-const MIN_HEIGHT = 170;
-const MIN_HEIGHT_PREJOIN = 220;
+  const ss = async (ty: string, tid: string, d: any) => { const cid = cidR.current; if (!cid) return; try { await fetch("/api/calls/webrtc/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: ty, callId: cid, targetUserId: tid, ...d }) }); } catch {} };
 
-const CALL_TIMEOUT_MS = 30_000;
+  const gm = async (f?: string): Promise<MediaStream | null> => { const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; const vc: any = { audio: true }; if (isVideo) { vc.video = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }; if (f) vc.video.facingMode = f; } else vc.video = false;
+    try { const s = await navigator.mediaDevices.getUserMedia(vc); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {}
+    if (f) { try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {} }
+    try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); lr.current = s; return s; } catch {}
+    lr.current = new MediaStream(); return lr.current; };
 
-function centeredRect(size: Exclude<CallSize, "full">): Rect {
-  if (typeof window === "undefined") {
-    return size === "mini"
-      ? { x: 120, y: 120, width: 320, height: 210 }
-      : { x: 180, y: 160, width: 560, height: 420 };
-  }
+  const swCam = async () => { const vt = lr.current?.getVideoTracks()[0]; if (!vt) return; const cf = (vt as any).getSettings?.()?.facingMode || "user"; const nf = cf === "user" ? "environment" : "user";
+    try { const ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, facingMode: nf }, audio: false }); const nt = ns.getVideoTracks()[0];
+      const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(nt);
+      if (lr.current) { lr.current.removeTrack(vt); lr.current.addTrack(nt); vt.stop(); if (lv.current) lv.current.srcObject = lr.current; } } catch {} };
 
-  const width = size === "mini" ? 320 : 560;
-  const height = size === "mini" ? 210 : 420;
+  const tgScr = async () => { if (shr) { if (srRef.current) { srRef.current.getTracks().forEach(t => t.stop()); srRef.current = null; } const ct = lr.current?.getVideoTracks()[0]; if (ct) { const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(ct); ct.enabled = !vidOff; } if (lv.current) lv.current.srcObject = lr.current; setShr(false); } else { try { const sc = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); srRef.current = sc; if (lv.current) lv.current.srcObject = sc; const st = sc.getVideoTracks()[0]; if (st) { const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(st); st.onended = () => tgScr(); } setShr(true); } catch {} } };
 
-  return {
-    x: Math.max(16, (window.innerWidth - width) / 2),
-    y: Math.max(16, (window.innerHeight - height) / 2),
-    width,
-    height,
-  };
-}
-
-function clampRect(rect: Rect): Rect {
-  if (typeof window === "undefined") return rect;
-
-  const maxX = Math.max(0, window.innerWidth - rect.width);
-  const maxY = Math.max(0, window.innerHeight - rect.height);
-
-  return {
-    ...rect,
-    x: Math.min(Math.max(0, rect.x), maxX),
-    y: Math.min(Math.max(0, rect.y), maxY),
-  };
-}
-
-export default function GlobalCallLayer({ currentUser }: Props) {
-  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
-
-  const tokenProvider = useMemo(() => {
-    return async () => {
-      const res = await fetch("/api/stream/token", {
-        method: "POST",
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch Stream token");
+  const mkPC = (ls: MediaStream | null) => { const pcc = new RTCPeerConnection(iceR.current); pc.current = pcc; const pid = pidR.current; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video";
+    if (ls && ls.getTracks().length > 0) ls.getTracks().forEach(t => pcc.addTrack(t, ls)); else { pcc.addTransceiver("audio", { direction: "recvonly" }); if (isVideo) pcc.addTransceiver("video", { direction: "recvonly" }); }
+    pcc.onicecandidate = e => { if (e.candidate && pid) ss("ice-candidate", pid, { candidate: e.candidate.candidate, sdpMLineIndex: e.candidate.sdpMLineIndex, sdpMid: e.candidate.sdpMid }); };
+    pcc.ontrack = e => { const s = e.streams[0]; if (!s) return; setRem(s); if (rv.current) rv.current.srcObject = s; setAct(true); setEndR(""); };
+    pcc.onconnectionstatechange = () => {
+      setConn(pcc.connectionState);
+      if (pcc.connectionState === "connected") { setAct(true); setEndR(""); }
+      if (pcc.connectionState === "disconnected" && actR.current) { setAct(false); setEndR("peer-left"); setTimeout(() => { if (!actR.current) cln(); }, 5000); }
+      if (pcc.connectionState === "failed") {
+        if (actR.current) { setAct(false); setEndR("lost"); setTimeout(() => cln(), 5000); }
+        else { pcc.restartIce(); }
       }
-
-      const data = (await res.json()) as {
-        token: string;
-      };
-
-      return data.token;
+      if (pcc.connectionState === "closed" && actR.current && !endRR.current) { setEndR("peer-left"); setTimeout(() => cln(), 2000); }
     };
+    pcc.oniceconnectionstatechange = () => { if (pcc.iceConnectionState === "failed") pcc.restartIce(); }; setConn("connecting"); return pcc; };
+
+  const procSig = async (s: any) => { const pcc = pc.current; if (!pcc) return; try { switch (s.type) { case "offer": await pcc.setRemoteDescription({ type: "offer", sdp: s.sdp }); const a = await pcc.createAnswer(); await pcc.setLocalDescription(a); if (s.fromUserId) await ss("answer", s.fromUserId, { sdp: a.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); break; case "answer": if (pcc.signalingState !== "stable" && s.sdp) await pcc.setRemoteDescription({ type: "answer", sdp: s.sdp }); break; case "ice-candidate": if (s.candidate && pcc.remoteDescription) await pcc.addIceCandidate({ candidate: s.candidate, sdpMLineIndex: s.sdpMLineIndex, sdpMid: s.sdpMid }); else if (s.candidate) pr.current.push(s); break; case "call-ended": setAct(false); setEndR("peer-left"); pcc.close(); setTimeout(() => cln(), 3000); break; } } catch {} };
+  const fp = async () => { const sigs = pr.current; pr.current = []; for (const s of sigs) await procSig(s); };
+
+  const accept = async () => { if (jr.current) return; jr.current = true; setRing(false); const s = await gm(); mkPC(s); await fp(); jr.current = false; };
+  const decline = async () => { if (inc?.callId) await upStatus(inc.callId, "DECLINED"); cln(); };
+  const startOut = async () => { if (jr.current) return; jr.current = true; const s = await gm(); const pid = pidR.current ?? outR.current?.peerId; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; if (!pid) { console.warn("[GCL] startOut: no peerId, abort"); jr.current = false; return; } const pcc = mkPC(s); try { const o = await pcc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo }); await pcc.setLocalDescription(o); await ss("offer", pid, { sdp: o.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); } catch { jr.current = false; return; } await fp(); jr.current = false; };
+  const endCall = async () => { const pid = pidR.current; if (pid) await ss("call-ended", pid, {}); if (cidR.current) await upStatus(cidR.current, "ENDED"); cln(); };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/calls/ice-config", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.success || !Array.isArray(data?.iceServers)) return;
+        iceR.current = {
+          iceServers: data.iceServers,
+          iceCandidatePoolSize: data.iceCandidatePoolSize ?? 2,
+          bundlePolicy: data.bundlePolicy ?? "max-bundle",
+          rtcpMuxPolicy: data.rtcpMuxPolicy ?? "require",
+        };
+      } catch {}
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  const [client, setClient] = useState<StreamVideoClient | null>(null);
-  const [call, setCall] = useState<Call | null>(null);
-
-  const callRef = useRef<Call | null>(null);
-
-  const [panelSize, setPanelSize] = useState<CallSize>("medium");
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-
-  const [panelRect, setPanelRect] = useState<Rect>(() =>
-    centeredRect("medium"),
-  );
-
-  const [incoming, setIncoming] = useState<IncomingPayload | null>(null);
-  const [outgoing, setOutgoing] = useState<OutgoingPayload | null>(null);
-
-  const dragRef = useRef<{
-    offsetX: number;
-    offsetY: number;
-  } | null>(null);
-
-  const resizeRef = useRef<{
-    handle: ResizeHandle;
-    startX: number;
-    startY: number;
-    startRect: Rect;
-  } | null>(null);
-
-  const activePayload = incoming ?? outgoing;
-
-  const isPreJoinState = Boolean(activePayload && !call);
-
-  const updateCallStatus = async (
-    callId: string,
-    status: "ACTIVE" | "ENDED" | "DECLINED",
-  ) => {
-    try {
-      await fetch("/api/calls/status", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          callId,
-          status,
-        }),
-      });
-    } catch {
-      //
-    }
-  };
-
-  const clearCallUI = async () => {
-    try {
-      await callRef.current?.leave();
-    } catch {
-      //
-    }
-
-    callRef.current = null;
-
-    setCall(null);
-    setIncoming(null);
-    setOutgoing(null);
-
-    setIsMinimized(false);
-    setIsJoining(false);
-  };
-
-  const isExpiredCall = (createdAt: string) => {
-    const created = new Date(createdAt).getTime();
-
-    return Date.now() - created > CALL_TIMEOUT_MS;
-  };
-
-  // STREAM INIT
-  useEffect(() => {
-    if (!apiKey) return;
-
-    const user = {
-      id: currentUser.id,
-      name: currentUser.displayName || currentUser.username,
-      image: currentUser.avatarUrl ?? undefined,
-    };
-
-    const c = new StreamVideoClient({
-      apiKey,
-      user,
-      tokenProvider,
-    });
-
-    setClient(c);
-
-    return () => {
-      callRef.current?.leave().catch(() => {});
-      callRef.current = null;
-
-      c.disconnectUser().catch(() => {});
-
-      setClient(null);
-    };
-  }, [
-    apiKey,
-    currentUser.id,
-    currentUser.displayName,
-    currentUser.username,
-    currentUser.avatarUrl,
-    tokenProvider,
-  ]);
-
-  // PUSHER EVENTS
-  useEffect(() => {
-    if (!pusherClient) return;
-    if (!currentUser?.id) return;
-
-    const channelName = `user-${currentUser.id}`;
-
-    const channel = pusherClient.subscribe(channelName);
-
-    const onIncoming = async (payload: IncomingPayload) => {
-      if (isExpiredCall(payload.createdAt)) {
-        await updateCallStatus(payload.callId, "ENDED");
-        return;
-      }
-
-      setOutgoing(null);
-      setIncoming(payload);
-
-      setPanelSize("medium");
-      setIsMinimized(false);
-
-      setPanelRect(centeredRect("medium"));
-    };
-
-    const onOutgoing = async (payload: OutgoingPayload) => {
-      if (isExpiredCall(payload.createdAt)) {
-        await updateCallStatus(payload.callId, "ENDED");
-        return;
-      }
-
-      setIncoming(null);
-      setOutgoing(payload);
-
-      setPanelSize("medium");
-      setIsMinimized(false);
-
-      setPanelRect(centeredRect("medium"));
-    };
-
-    channel.bind("incoming-call", onIncoming);
-    channel.bind("outgoing-call", onOutgoing);
-
-    return () => {
-      channel.unbind("incoming-call", onIncoming);
-      channel.unbind("outgoing-call", onOutgoing);
-
-      pusherClient.unsubscribe(channelName);
-    };
+  useEffect(() => { if (!pusherClient || !currentUser?.id) return; const ch = pusherClient.subscribe(`user-${currentUser.id}`);
+    ch.bind("incoming-call", (p: CP) => { cidR.current = p.callId; setInc(p); setOut(null); setRing(true); setVis(true); setAct(false); setEndR(""); setConn("new"); setSz("medium"); setMini(false); setPos(cr("medium")); });
+    ch.bind("outgoing-call", (p: CP) => { if (!vis) { cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 500); } });
+    ch.bind("webrtc-signal", (s: any) => { if (!pc.current) { pr.current.push(s); return; } procSig(s); });
+    const onCE = (e: Event) => { const p = (e as CustomEvent).detail as CP; cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 300); };
+    window.addEventListener("global-call-outgoing", onCE);
+    return () => { ch.unbind("incoming-call"); ch.unbind("outgoing-call"); ch.unbind("webrtc-signal"); window.removeEventListener("global-call-outgoing", onCE); pusherClient.unsubscribe(`user-${currentUser.id}`); };
   }, [currentUser.id]);
 
-  // RESTORE ACTIVE CALL
-  useEffect(() => {
-    let mounted = true;
+  useEffect(() => { if (!p || act) return; const ex = TO - (Date.now() - new Date(p.createdAt).getTime()); if (ex <= 0) { upStatus(p.callId, "ENDED"); cln(); return; } const t = setTimeout(async () => { if (!act) { await upStatus(p.callId, "ENDED"); cln(); } }, ex); return () => clearTimeout(t); }, [p, act]);
+  useEffect(() => { if (sz === "full") setMini(false); }, [sz]);
+  useEffect(() => { const mm = (e: MouseEvent) => { if (dr.current && sz !== "full") setPos(pp => cl({ ...pp, x: e.clientX - dr.current!.ox, y: e.clientY - dr.current!.oy })); if (rr.current && sz !== "full") { const { h, sr, sx, sy } = rr.current; const dx = e.clientX - sx, dy = e.clientY - sy; let nx = sr.x, ny = sr.y, nw = sr.width, nh = sr.height; if (h.includes("right")) nw = Math.max(MW, sr.width + dx); if (h.includes("left")) { nw = Math.max(MW, sr.width - dx); nx = sr.x + (sr.width - nw); } if (h.includes("bottom")) nh = Math.max(MH, sr.height + dy); if (h.includes("top")) { nh = Math.max(MH, sr.height - dy); ny = sr.y + (sr.height - nh); } setPos(cl({ x: nx, y: ny, width: nw, height: nh })); } }; const mu = () => { dr.current = null; rr.current = null; }; window.addEventListener("mousemove", mm); window.addEventListener("mouseup", mu); return () => { window.removeEventListener("mousemove", mm); window.removeEventListener("mouseup", mu); }; }, [sz]);
+  const sd = (e: React.MouseEvent) => { if (sz !== "full") dr.current = { ox: e.clientX - pos.x, oy: e.clientY - pos.y }; };
+  const srs = (h: H, e: React.MouseEvent) => { if (sz !== "full") { e.stopPropagation(); rr.current = { h, sx: e.clientX, sy: e.clientY, sr: pos }; } };
+  if (!vis) return null;
 
-    const restoreCall = async () => {
-      try {
-        const res = await fetch("/api/calls/active", {
-          cache: "no-store",
-        });
+  const peer = inc ? { name: inc.from.displayName || inc.from.username, av: inc.from.avatarUrl } : { name: out?.chatName || "Собеседник", av: null as string | null };
+  const me = { name: currentUser.displayName || currentUser.username, av: currentUser.avatarUrl || null };
+  const clab = conn === "connected" ? "На связи" : conn === "connecting" ? "Подключение..." : conn === "new" ? "Ожидание" : conn;
+  const st = sz === "full" ? undefined : { left: pos.x, top: pos.y, width: pos.width, height: mini ? 58 : pos.height };
 
-        if (!res.ok) return;
-
-        const data = (await res.json()) as
-          | { hasCall: false }
-          | {
-              hasCall: true;
-              role: "incoming" | "outgoing";
-              payload: IncomingPayload;
-            };
-
-        if (!mounted || !data.hasCall) return;
-
-        if (isExpiredCall(data.payload.createdAt)) {
-          await updateCallStatus(data.payload.callId, "ENDED");
-          return;
-        }
-
-        if (data.role === "incoming") {
-          setOutgoing(null);
-          setIncoming(data.payload);
-        } else {
-          setIncoming(null);
-          setOutgoing(data.payload);
-        }
-
-        setPanelSize("medium");
-        setIsMinimized(false);
-
-        setPanelRect(centeredRect("medium"));
-      } catch {
-        //
-      }
-    };
-
-    restoreCall();
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentUser.id]);
-
-  // AUTO EXPIRE
-  useEffect(() => {
-    if (!activePayload || call) return;
-
-    const createdAt = new Date(activePayload.createdAt).getTime();
-
-    const expiresIn =
-      CALL_TIMEOUT_MS - (Date.now() - createdAt);
-
-    if (expiresIn <= 0) {
-      updateCallStatus(activePayload.callId, "ENDED");
-      clearCallUI();
-
-      return;
-    }
-
-    const timeout = setTimeout(async () => {
-      try {
-        // если никто не подключился
-        if (!callRef.current) {
-          await updateCallStatus(
-            activePayload.callId,
-            "ENDED",
-          );
-
-          await clearCallUI();
-        }
-      } catch {
-        //
-      }
-    }, expiresIn);
-
-    return () => clearTimeout(timeout);
-  }, [activePayload, call]);
-
-  // PANEL SIZE
-  useEffect(() => {
-    if (panelSize === "full") {
-      setIsMinimized(false);
-    }
-  }, [panelSize]);
-
-  // DRAG + RESIZE
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (dragRef.current && panelSize !== "full") {
-        setPanelRect((prev) =>
-          clampRect({
-            ...prev,
-            x: e.clientX - dragRef.current!.offsetX,
-            y: e.clientY - dragRef.current!.offsetY,
-          }),
-        );
-      }
-
-      if (resizeRef.current && panelSize !== "full") {
-        const {
-          handle,
-          startRect,
-          startX,
-          startY,
-        } = resizeRef.current;
-
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-
-        let nextX = startRect.x;
-        let nextY = startRect.y;
-        let nextWidth = startRect.width;
-        let nextHeight = startRect.height;
-
-        if (handle.includes("right")) {
-          nextWidth = Math.max(
-            MIN_WIDTH,
-            startRect.width + dx,
-          );
-        }
-
-        if (handle.includes("left")) {
-          nextWidth = Math.max(
-            MIN_WIDTH,
-            startRect.width - dx,
-          );
-
-          nextX =
-            startRect.x +
-            (startRect.width - nextWidth);
-        }
-
-        const minHeight = isPreJoinState
-          ? MIN_HEIGHT_PREJOIN
-          : MIN_HEIGHT;
-
-        if (handle.includes("bottom")) {
-          nextHeight = Math.max(
-            minHeight,
-            startRect.height + dy,
-          );
-        }
-
-        if (handle.includes("top")) {
-          nextHeight = Math.max(
-            minHeight,
-            startRect.height - dy,
-          );
-
-          nextY =
-            startRect.y +
-            (startRect.height - nextHeight);
-        }
-
-        setPanelRect(
-          clampRect({
-            x: nextX,
-            y: nextY,
-            width: nextWidth,
-            height: nextHeight,
-          }),
-        );
-      }
-    };
-
-    const onMouseUp = () => {
-      dragRef.current = null;
-      resizeRef.current = null;
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      window.removeEventListener(
-        "mousemove",
-        onMouseMove,
-      );
-
-      window.removeEventListener(
-        "mouseup",
-        onMouseUp,
-      );
-    };
-  }, [isPreJoinState, panelSize]);
-
-  const startDrag = (
-    e: React.MouseEvent<HTMLDivElement>,
-  ) => {
-    if (panelSize === "full") return;
-
-    dragRef.current = {
-      offsetX: e.clientX - panelRect.x,
-      offsetY: e.clientY - panelRect.y,
-    };
-  };
-
-  const startResize = (
-    handle: ResizeHandle,
-    e: React.MouseEvent<HTMLDivElement>,
-  ) => {
-    if (panelSize === "full") return;
-
-    e.stopPropagation();
-
-    resizeRef.current = {
-      handle,
-      startX: e.clientX,
-      startY: e.clientY,
-      startRect: panelRect,
-    };
-  };
-
-  const join = async () => {
-    if (!client || !activePayload || isJoining) return;
-
-    setIsJoining(true);
-
-    const nextCall = client.call(
-      activePayload.streamCallType,
-      activePayload.callId,
-    );
-
-    callRef.current = nextCall;
-
-    setCall(nextCall);
-
-    try {
-      await nextCall.join({
-        create: true,
-      });
-
-      await updateCallStatus(
-        activePayload.callId,
-        "ACTIVE",
-      );
-    } catch {
-      await clearCallUI();
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  const decline = async () => {
-    if (activePayload?.callId) {
-      await updateCallStatus(
-        activePayload.callId,
-        "DECLINED",
-      );
-    }
-
-    await clearCallUI();
-  };
-
-  if (!apiKey) return null;
-
-  if (!activePayload && !call) return null;
-
-  const title = incoming
-    ? `${incoming.from.displayName || incoming.from.username} звонит…`
-    : "Звонок…";
-
-  const sizeBtn = (
-    label: string,
-    next: CallSize,
-  ) => (
-    <button
-      onClick={() => {
-        setPanelSize(next);
-
-        setIsMinimized(false);
-
-        if (next !== "full") {
-          setPanelRect(centeredRect(next));
-        }
-      }}
-      className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-white/80"
-    >
-      {label}
-    </button>
-  );
-
-  const panelStyle =
-    panelSize === "full"
-      ? undefined
-      : {
-          left: panelRect.x,
-          top: panelRect.y,
-          width: panelRect.width,
-          height: isMinimized
-            ? 58
-            : panelRect.height,
-        };
-
-  return (
-    <div className="fixed inset-0 z-[400] pointer-events-none">
-      <div
-        style={panelStyle}
-        className={`fixed ${
-          panelSize === "full"
-            ? "inset-0 rounded-none"
-            : "rounded-2xl"
-        } pointer-events-auto bg-[#0b0b0e] border border-white/10 shadow-2xl overflow-hidden flex flex-col`}
-      >
-        <div
-          onMouseDown={startDrag}
-          className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-black/30 cursor-move select-none"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {activePayload?.type === "video" ? (
-              <Video
-                size={16}
-                className="text-blue-400"
-              />
-            ) : (
-              <Phone
-                size={16}
-                className="text-green-400"
-              />
-            )}
-
-            <div className="min-w-0">
-              <p className="text-xs text-white/80 truncate">
-                {title}
-              </p>
-
-              {activePayload?.chatName && (
-                <p className="text-[10px] text-white/40 truncate">
-                  {activePayload.chatName}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div
-            className="flex items-center gap-2"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {sizeBtn("мини", "mini")}
-            {sizeBtn("сред", "medium")}
-            {sizeBtn("экран", "full")}
-
-            <button
-              onClick={() =>
-                setIsMinimized((prev) => !prev)
-              }
-              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-white/80"
-            >
-              <Minimize2 size={14} />
-            </button>
-
-            <button
-              onClick={async () => {
-                if (activePayload?.callId) {
-                  await updateCallStatus(
-                    activePayload.callId,
-                    "ENDED",
-                  );
-                }
-
-                await clearCallUI();
-              }}
-              className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-xs text-red-300"
-            >
-              ✕
-            </button>
-          </div>
+  return (<div className="fixed inset-0 z-[400] pointer-events-none">
+    <div style={st} className={`fixed ${sz==="full"?"inset-0 rounded-none":"rounded-2xl"} pointer-events-auto bg-[#0b0b0e] border border-white/10 shadow-2xl overflow-hidden flex flex-col`}>
+      <div onMouseDown={sd} className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-black/30 cursor-move select-none">
+        <div className="flex items-center gap-2">{iv?<Video size={16} className="text-blue-400"/>:<Phone size={16} className="text-green-400"/>}<div className="flex items-center gap-1.5">{conn==="connected"&&<Wifi size={12} className="text-green-400"/>}{conn!=="connected"&&!ring&&endR===""&&<WifiOff size={12} className="text-yellow-400 animate-pulse"/>}<p className="text-xs text-white/80">{endR?endR==="peer-left"?"Собеседник вышел":"Соединение потеряно":clab}</p></div></div>
+        <div className="flex items-center gap-2" onMouseDown={e=>e.stopPropagation()}>
+          {(["мини","сред","экран"] as const).map((l,i)=><button key={l} onClick={()=>{setSz((["mini","medium","full"]as Sz[])[i]);setMini(false);if(i===0)setPos(cr("mini"));if(i===1)setPos(cr("medium"))}} className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-white/80">{l}</button>)}
+          <button onClick={()=>setMini(p=>!p)} className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-white/80"><Minimize2 size={14}/></button>
+          <button onClick={endCall} className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-xs text-red-300">✕</button>
         </div>
-
-        {!isMinimized && (
-          <div className="flex-1 min-h-0">
-            {incoming && !call && (
-              <div className="p-4 h-full flex flex-col justify-between gap-4">
-                <div className="text-white/70 text-sm">
-                  Входящий{" "}
-                  {incoming.type === "video"
-                    ? "видеозвонок"
-                    : "аудиозвонок"}{" "}
-                  от{" "}
-                  <span className="text-white font-semibold">
-                    {incoming.from.displayName ||
-                      incoming.from.username}
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={join}
-                    disabled={isJoining}
-                    className="flex-1 py-2 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold"
-                  >
-                    {isJoining
-                      ? "Подключение..."
-                      : "Принять"}
-                  </button>
-
-                  <button
-                    onClick={decline}
-                    disabled={isJoining}
-                    className="flex-1 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed text-red-300 text-sm font-semibold"
-                  >
-                    Отклонить
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {outgoing && !call && (
-              <div className="p-4 h-full flex flex-col justify-between gap-4">
-                <div className="text-white/70 text-sm">
-                  Исходящий{" "}
-                  {outgoing.type === "video"
-                    ? "видеозвонок"
-                    : "аудиозвонок"}
-                  …
-                </div>
-
-                <div className="flex gap-2 mt-auto">
-                  <button
-                    onClick={join}
-                    disabled={isJoining}
-                    className="flex-1 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold"
-                  >
-                    {isJoining
-                      ? "Подключение..."
-                      : "Начать"}
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      if (activePayload?.callId) {
-                        await updateCallStatus(
-                          activePayload.callId,
-                          "ENDED",
-                        );
-                      }
-
-                      await clearCallUI();
-                    }}
-                    disabled={isJoining}
-                    className="flex-1 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 disabled:opacity-60 disabled:cursor-not-allowed text-red-300 text-sm font-semibold flex items-center justify-center gap-2"
-                  >
-                    <PhoneOff size={16} />
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {client && call && (
-              <StreamVideo client={client}>
-                <StreamCall call={call}>
-                  <StreamTheme>
-                    <div className="w-full h-full relative">
-                      <SpeakerLayout
-                        participantsBarPosition={
-                          panelSize === "mini"
-                            ? "bottom"
-                            : "right"
-                        }
-                      />
-
-                      <div className="call-controls-dock absolute bottom-2 left-2 right-2 z-20 overflow-x-auto overflow-y-hidden scrollbar-thin">
-                        <div className="min-w-max">
-                          <CallControls
-                            onLeave={clearCallUI}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </StreamTheme>
-                </StreamCall>
-              </StreamVideo>
-            )}
-          </div>
-        )}
-
-        {!isMinimized &&
-          panelSize !== "full" && (
-            <>
-              <div
-                className="absolute top-0 left-2 right-2 h-1 cursor-ns-resize"
-                onMouseDown={(e) =>
-                  startResize("top", e)
-                }
-              />
-
-              <div
-                className="absolute bottom-0 left-2 right-2 h-1 cursor-ns-resize"
-                onMouseDown={(e) =>
-                  startResize("bottom", e)
-                }
-              />
-
-              <div
-                className="absolute left-0 top-2 bottom-2 w-1 cursor-ew-resize"
-                onMouseDown={(e) =>
-                  startResize("left", e)
-                }
-              />
-
-              <div
-                className="absolute right-0 top-2 bottom-2 w-1 cursor-ew-resize"
-                onMouseDown={(e) =>
-                  startResize("right", e)
-                }
-              />
-
-              <div
-                className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize"
-                onMouseDown={(e) =>
-                  startResize("top-left", e)
-                }
-              />
-
-              <div
-                className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize"
-                onMouseDown={(e) =>
-                  startResize("top-right", e)
-                }
-              />
-
-              <div
-                className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize"
-                onMouseDown={(e) =>
-                  startResize("bottom-left", e)
-                }
-              />
-
-              <div
-                className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize"
-                onMouseDown={(e) =>
-                  startResize("bottom-right", e)
-                }
-              />
-            </>
-          )}
-
-        <style jsx global>{`
-          .call-controls-dock
-            .str-video__call-controls {
-            position: static !important;
-            bottom: auto !important;
-            top: auto !important;
-            margin: 0 !important;
-          }
-
-          .str-video__call-controls {
-            flex-wrap: nowrap !important;
-            width: max-content;
-            min-width: 100%;
-          }
-        `}</style>
       </div>
+      {!mini&&<div className="flex-1 min-h-0 relative bg-black">
+        <video ref={rv} autoPlay playsInline className="w-full h-full object-cover"/>
+        {(iv||shr)&&<div className="absolute top-4 right-4 w-48 h-36 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg bg-zinc-800"><video ref={lv} autoPlay playsInline muted className="w-full h-full object-cover"/><div className="absolute bottom-1 left-1 bg-black/70 px-1.5 py-0.5 rounded text-[10px] text-white/80">{shr?"Экран":"Вы"}</div></div>}
+        {!ring&&endR===""&&<div className="absolute top-4 left-4 flex items-center gap-2"><div className="flex items-center gap-2 bg-black/50 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/10"><Avatar image={peer.av} title={peer.name} size={28}/><span className="text-white text-xs font-medium">{peer.name}</span>{conn==="connected"?<span className="w-2 h-2 bg-green-400 rounded-full"/>:<span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"/>}</div><div className="flex items-center gap-2 bg-black/50 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/10"><Avatar image={me.av} title={me.name} size={28}/><span className="text-white text-xs font-medium">Вы</span>{mut&&<MicOff size={10} className="text-red-400"/>}</div></div>}
+        {ring&&<div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80"><div className="mb-4 ring-4 ring-green-500/30 rounded-full animate-pulse"><Avatar image={inc?.from.avatarUrl} title={inc?.from.displayName||inc?.from.username||"?"} size={96}/></div><p className="text-white text-xl font-semibold">{inc?.from.displayName||inc?.from.username}</p><p className="text-white/40 text-sm mt-1">{iv?"Видеозвонок":"Аудиозвонок"}</p><div className="flex items-center justify-center gap-6 mt-8"><button onClick={decline} className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors"><PhoneOff size={28}/></button><button onClick={accept} className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center shadow-lg shadow-green-500/30 hover:bg-green-600 transition-colors"><Phone size={28}/></button></div></div>}
+        {endR!==""&&<div className="absolute inset-0 flex items-center justify-center bg-black/80"><div className="text-center"><div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">{endR==="peer-left"?<PhoneOff size={36} className="text-yellow-400"/>:<WifiOff size={36} className="text-red-400"/>}</div><p className="text-white text-xl font-semibold">{endR==="peer-left"?`${peer.name} вышел(а) из звонка`:"Соединение потеряно"}</p><p className="text-white/40 text-sm mt-1">{endR==="peer-left"?"Звонок завершён":"Проверьте подключение к интернету"}</p></div></div>}
+        {!rem&&!act&&!ring&&endR===""&&<div className="absolute inset-0 flex items-center justify-center bg-black/70"><div className="text-center"><div className="relative mx-auto mb-6 w-24 h-24"><div className="absolute inset-0 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"/><div className="absolute inset-2 flex items-center justify-center"><Avatar image={iv?peer.av:undefined} title={out?(out.chatName||"?"):(inc?.from.displayName||inc?.from.username||"?")} size={64}/></div></div><p className="text-white text-lg font-medium mb-1">{out?peer.name:(inc?.from.displayName||inc?.from.username)}</p><p className="text-white/50 text-sm">{out?"Звонок...":"Подключение..."}</p>{out&&<p className="text-white/30 text-xs mt-1">Ожидание ответа...</p>}</div></div>}
+        {!ring&&endR===""&&<div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-4 bg-gradient-to-t from-black/80 to-transparent">
+          <button onClick={()=>{const t=lr.current?.getAudioTracks()[0];if(t){t.enabled=mut;setMut(!mut)}}} className={`p-3 rounded-full ${mut?'bg-red-500':'bg-white/10 hover:bg-white/20'}`}>{mut?<MicOff size={22}/>:<Mic size={22}/>}</button>
+          <button onClick={endCall} className="p-4 bg-red-500 rounded-full shadow-lg shadow-red-500/20"><PhoneOff size={26}/></button>
+          <button onClick={()=>{const t=lr.current?.getVideoTracks()[0];if(t){t.enabled=vidOff;setVidOff(!vidOff)}}} className={`p-3 rounded-full ${vidOff?'bg-red-500':'bg-white/10 hover:bg-white/20'}`}>{vidOff?<VideoOff size={22}/>:<Video size={22}/>}</button>
+          {iv&&<><button onClick={swCam} className="p-3 bg-white/10 hover:bg-white/20 rounded-full"><RefreshCw size={22}/></button><button onClick={tgScr} className={`p-3 rounded-full ${shr?'bg-green-500':'bg-white/10 hover:bg-white/20'}`}>{shr?<MonitorOff size={22}/>:<Monitor size={22}/>}</button></>}
+        </div>}
+      </div>}
+      {!mini&&sz!=="full"&&<>
+        <div className="absolute top-0 left-2 right-2 h-1 cursor-ns-resize" onMouseDown={e=>srs("top",e)}/><div className="absolute bottom-0 left-2 right-2 h-1 cursor-ns-resize" onMouseDown={e=>srs("bottom",e)}/>
+        <div className="absolute left-0 top-2 bottom-2 w-1 cursor-ew-resize" onMouseDown={e=>srs("left",e)}/><div className="absolute right-0 top-2 bottom-2 w-1 cursor-ew-resize" onMouseDown={e=>srs("right",e)}/>
+        <div className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize" onMouseDown={e=>srs("top-left",e)}/><div className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize" onMouseDown={e=>srs("top-right",e)}/>
+        <div className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize" onMouseDown={e=>srs("bottom-left",e)}/><div className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize" onMouseDown={e=>srs("bottom-right",e)}/>
+      </>}
     </div>
-  );
+  </div>);
 }

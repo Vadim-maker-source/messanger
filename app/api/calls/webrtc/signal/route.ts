@@ -1,0 +1,163 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/app/lib/prisma";
+import { getCurrentUser } from "@/app/lib/api/user";
+import { pusherServer } from "@/app/lib/pusher";
+import { sendPushNotification } from "@/app/lib/firebase-admin";
+
+export const dynamic = "force-dynamic";
+
+type SignalBody = {
+  type: "offer" | "answer" | "ice-candidate";
+  callId: string;
+  targetUserId?: string;
+  sdp?: string;
+  candidate?: string;
+  sdpMLineIndex?: number;
+  sdpMid?: string;
+};
+
+export async function POST(req: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = (await req.json()) as Partial<SignalBody> & { targetUserId?: string };
+    const { type, callId, targetUserId: explicitTargetId, sdp, candidate, sdpMLineIndex, sdpMid } = body;
+
+    if (!type || !callId) {
+      return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    }
+
+    const chatId = callId.replace(/^chat_/, "").replace(/_\d+$/, "");
+
+    let targetUserId = explicitTargetId;
+
+    // Если targetUserId не передан явно — вычисляем из callId/чата
+    if (!targetUserId) {
+
+      // Получаем чат, чтобы найти других участников
+      const chat = await prisma.chat.findFirst({
+        where: {
+          id: chatId,
+          users: { some: { id: user.id } },
+        },
+        select: {
+          users: {
+            select: { id: true, displayName: true, username: true },
+          },
+        },
+      });
+
+      if (!chat) {
+        return NextResponse.json({ message: "Chat not found" }, { status: 404 });
+      }
+
+      // Находим targetUserId — любого участника чата, кроме отправителя
+      const targetUser = chat.users.find((u) => u.id !== user.id);
+      if (!targetUser) {
+        return NextResponse.json({ message: "No other participants" }, { status: 400 });
+      }
+      targetUserId = targetUser.id;
+    }
+
+    const signalPayload = {
+      callId,
+      fromUserId: user.id,
+      fromDisplayName: user.displayName || user.username || "User",
+      type,
+      sdp,
+      candidate,
+      sdpMLineIndex,
+      sdpMid,
+    };
+
+    // Отправляем сигнал целевому пользователю через Pusher
+    await pusherServer.trigger(`user-${targetUserId}`, "webrtc-signal", signalPayload);
+
+    console.log("[Signal] Sent", type, "to user", targetUserId, "for call", callId);
+
+    // Если это первый offer — сохраняем SDP и отправляем уведомление
+    if (type === 'offer') {
+      try {
+        const call = await prisma.call.findFirst({
+          where: { streamCallId: callId },
+          select: { status: true, type: true },
+        });
+
+        if (call && call.status === 'RINGING') {
+          // Сохраняем offer SDP, чтобы получатель мог забрать его при опоздании
+          if (sdp) {
+            await prisma.call.update({
+              where: { streamCallId: callId },
+              data: { offerSdp: sdp as string },
+            });
+          }
+          const callChat = await prisma.chat.findFirst({
+            where: { id: chatId },
+            include: {
+              users: {
+                select: { id: true, username: true, displayName: true, avatarUrl: true, fcmToken: true },
+              },
+            },
+          });
+
+          if (callChat) {
+            const callee = callChat.users.find((u) => u.id === targetUserId);
+            if (callee) {
+              const chatNameForCallee =
+                callChat.name ||
+                callChat.users.find((u) => u.id !== callee.id)?.displayName ||
+                callChat.users.find((u) => u.id !== callee.id)?.username ||
+                'Личный чат';
+
+              const callTypeStr = call.type === 'AUDIO' ? 'audio' : 'video';
+              const callerName = (user.displayName || user.username) ?? 'Пользователь';
+
+              await pusherServer.trigger(`user-${targetUserId}`, 'incoming-call', {
+                callId,
+                type: callTypeStr,
+                chatId,
+                from: {
+                  id: user.id,
+                  username: user.username,
+                  displayName: user.displayName,
+                  avatarUrl: user.avatarUrl ?? null,
+                },
+                createdAt: new Date().toISOString(),
+                chatName: chatNameForCallee,
+              });
+
+              if (callee.fcmToken) {
+                sendPushNotification({
+                  token: callee.fcmToken,
+                  title: callTypeStr === 'video' ? '📹 Входящий видеозвонок' : '📞 Входящий звонок',
+                  body: callerName,
+                  data: {
+                    type: 'call',
+                    callId,
+                    callType: callTypeStr,
+                    chatId,
+                    chatName: chatNameForCallee,
+                    callerName,
+                    callerId: user.id,
+                  },
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Signal] Failed to send incoming notification:', e);
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json(
+      { message: error?.message || "Failed to send signal" },
+      { status: 500 },
+    );
+  }
+}

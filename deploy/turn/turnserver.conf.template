@@ -1,0 +1,49 @@
+# ════════════════════════════════════════════════════════════════
+# coturn config — generated from template by install.sh
+# ════════════════════════════════════════════════════════════════
+
+# Слушаем все интерфейсы на стандартных портах
+listening-port=3478
+tls-listening-port=5349
+
+# Публичный IP VPS — критично для генерации правильных ICE-кандидатов
+external-ip=__PUBLIC_IP__
+
+# Диапазон relay-портов (UDP) — должен совпадать с открытыми в ufw
+min-port=49152
+max-port=65535
+
+# ─── Аутентификация ────────────────────────────────────────────
+# Long-term credentials, статический юзер
+lt-cred-mech
+user=__TURN_USER__:__TURN_PASSWORD__
+realm=__REALM__
+
+# ─── Безопасность: запрет relay в приватные сети (защита от SSRF) ─
+no-multicast-peers
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=::1
+denied-peer-ip=fe80::-fe80::ffff:ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# ─── Прочее ────────────────────────────────────────────────────
+fingerprint
+no-tlsv1
+no-tlsv1_1
+# отключаем telnet-CLI на 5766 (атакуют брутом)
+no-cli
+# запрещаем relay через TCP к peer'у (UDP достаточно для медиа)
+no-tcp-relay
+stale-nonce=600
+
+# ─── Логирование ───────────────────────────────────────────────
+# Логи идут в stderr контейнера → видны через `docker logs coturn`
+# и пишутся в logs/ через json-file driver Docker'а.
+simple-log
+verbose

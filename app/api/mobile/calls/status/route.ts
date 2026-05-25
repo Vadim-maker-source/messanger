@@ -18,14 +18,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid payload" }, { status: 400 });
     }
 
-    const streamCallId = `default:${callId}`;
-    const existing = await prisma.call.findFirst({
-      where: {
-        streamCallId,
-        chat: { users: { some: { id: user.id } } },
-      },
-      select: { id: true },
-    });
+    // Ищем по обоим форматам streamCallId: с префиксом (Stream) и без (WebRTC)
+    const existing =
+      (await prisma.call.findFirst({
+        where: { streamCallId: callId, chat: { users: { some: { id: user.id } } } },
+        select: { id: true },
+      })) ??
+      (await prisma.call.findFirst({
+        where: { streamCallId: `default:${callId}`, chat: { users: { some: { id: user.id } } } },
+        select: { id: true },
+      }));
 
     if (!existing) {
       return NextResponse.json({ success: false, error: "Call not found" }, { status: 404 });

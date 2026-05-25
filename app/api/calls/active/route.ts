@@ -58,20 +58,22 @@ export async function GET() {
     }
 
     // Для ACTIVE звонков проверяем реальных участников через Stream API
+    // Только для Stream-звонков (streamCallId начинается с "default:")
     const toEnd: string[] = [];
     let activeCall = null;
 
     for (const call of calls) {
       if (call.status === "ACTIVE") {
-        const streamCallId = call.streamCallId.includes(":")
-          ? call.streamCallId.split(":").slice(1).join(":")
-          : call.streamCallId;
-
-        const participants = await getStreamParticipantCount(streamCallId);
-        if (participants === 0) {
-          toEnd.push(call.id);
-          continue;
+        const isStreamCall = call.streamCallId.startsWith("default:");
+        if (isStreamCall) {
+          const streamCallId = call.streamCallId.split(":").slice(1).join(":");
+          const participants = await getStreamParticipantCount(streamCallId);
+          if (participants === 0) {
+            toEnd.push(call.id);
+            continue;
+          }
         }
+        // WebRTC звонок — не проверяем через Stream API
       }
       if (!activeCall) activeCall = call;
     }
