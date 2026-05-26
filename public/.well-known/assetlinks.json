@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.messanger",
+      "sha256_cert_fingerprints": [
+        "F5:46:E9:9C:31:65:BC:99:BC:46:4A:68:73:75:3B:25:99:52:A0:6E:66:47:EE:22:A6:38:43:3D:41:DF:52:1E",
+        "B4:00:5C:FE:70:8D:76:D8:81:2F:44:01:34:8B:2D:F3:47:BF:0F:86:B7:08:73:DB:92:73:95:0C:8F:9C:80:D8"
+      ]
+    }
+  }
+]
