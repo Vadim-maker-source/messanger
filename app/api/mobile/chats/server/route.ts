@@ -50,3 +50,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });
   }
 }
+
+// PATCH: добавить канал к существующему серверу
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getMobileUserFromRequest(req);
+    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+
+    const { serverId, name, type } = await req.json();
+    if (!serverId || !name?.trim()) {
+      return NextResponse.json({ success: false, error: "serverId and name required" }, { status: 400 });
+    }
+
+    // Проверка прав — только владелец сервера может добавлять каналы
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      select: { ownerId: true, access: true, members: { select: { id: true } } },
+    });
+    if (!server) return NextResponse.json({ success: false, error: "Server not found" }, { status: 404 });
+    if (server.ownerId !== user.id) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    const memberIds = server.members.map((m) => m.id);
+    const chat = await prisma.chat.create({
+      data: {
+        name: name.trim(),
+        type: (type as ChatType) || "CHANNEL",
+        access: server.access,
+        serverId: serverId,
+        users: { connect: memberIds.map((id) => ({ id })) },
+      },
+    });
+    for (const memberId of memberIds) {
+      await prisma.chatMember.create({
+        data: { userId: memberId, chatId: chat.id, role: memberId === user.id ? "CREATOR" : "MEMBER" },
+      });
+    }
+
+    return NextResponse.json({ success: true, data: chat });
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  }
+}
