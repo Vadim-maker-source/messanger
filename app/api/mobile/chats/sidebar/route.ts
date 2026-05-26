@@ -29,10 +29,12 @@ export async function GET(req: NextRequest) {
         const lastMsg = chat.messages[0];
         let displayTitle = chat.name;
         let displayImage = chat.imageUrl;
+        let partnerId: string | null = null;
         if (chat.type === "PRIVATE") {
           const partner = chat.users.find((u) => u.id !== user.id);
           displayTitle = partner?.displayName || partner?.username || "Чат";
           displayImage = partner?.avatarUrl || null;
+          partnerId = partner?.id ?? null;
         }
         return {
           id: chat.id,
@@ -42,6 +44,7 @@ export async function GET(req: NextRequest) {
           unreadCount,
           updatedAt: chat.updatedAt,
           role: chat.members[0]?.role || null,
+          partnerId,
           lastMessage: lastMsg
             ? { content: lastMsg.content, createdAt: lastMsg.createdAt, senderId: lastMsg.userId }
             : null,
