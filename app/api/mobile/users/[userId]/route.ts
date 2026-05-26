@@ -3,6 +3,8 @@ import { prisma } from "@/app/lib/prisma";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 
 // GET /api/mobile/users/[userId]
+// Возвращает профиль пользователя + общие чаты + статистику + блок-статус.
+// Шейп ответа максимально совпадает с веб-API getUserProfile (lib/api/user.ts).
 export async function GET(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   try {
     const user = await getMobileUserFromRequest(req);
@@ -20,16 +22,68 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ user
     });
     if (!target) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
-    const visibility = target.settings?.profileVisibility || "public";
     const isSelf = user.id === userId;
-    const canSee = isSelf || visibility === "public";
 
-    const mutualChats = await prisma.chat.count({
-      where: { AND: [{ users: { some: { id: user.id } } }, { users: { some: { id: userId } } }] },
+    // ─── Общие чаты (полный список, как в web getMutualChats) ───────────────
+    const mutualRaw = isSelf ? [] : await prisma.chat.findMany({
+      where: {
+        AND: [
+          { users: { some: { id: user.id } } },
+          { users: { some: { id: userId } } },
+        ],
+      },
+      include: {
+        users: {
+          where: { id: { not: user.id } },
+          select: { id: true, displayName: true, username: true, avatarUrl: true },
+        },
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { content: true, createdAt: true },
+        },
+        _count: { select: { messages: true, users: true } },
+      },
+      orderBy: { updatedAt: "desc" },
     });
 
+    const mutualChats = mutualRaw.map((c) => ({
+      id: c.id,
+      name: c.type === "PRIVATE"
+        ? (c.users[0]?.displayName || c.users[0]?.username || "Чат")
+        : (c.name || "Групповой чат"),
+      type: c.type,
+      imageUrl: c.imageUrl,
+      lastMessage: c.messages[0]?.content || "",
+      lastMessageTime: c.messages[0]?.createdAt || null,
+      messagesCount: c._count.messages,
+      membersCount: c._count.users,
+    }));
+
+    const visibility = target.settings?.profileVisibility || "public";
+    const canSeeProfileExtras =
+      isSelf ||
+      visibility === "public" ||
+      (visibility === "contacts" && mutualChats.length > 0);
+
     const prefs = (target.settings?.preferences || {}) as Record<string, any>;
-    const socialLinks = canSee || mutualChats > 0 ? (prefs.socialLinks || null) : null;
+    const socialLinks = canSeeProfileExtras ? (prefs.socialLinks || null) : null;
+
+    // ─── Статус блока ───────────────────────────────────────────────────────
+    const [iBlocked, theyBlocked] = isSelf ? [null, null] : await Promise.all([
+      (prisma as any).block.findUnique({
+        where: { blockerId_blockedId: { blockerId: user.id, blockedId: userId } },
+      }).catch(() => null),
+      (prisma as any).block.findUnique({
+        where: { blockerId_blockedId: { blockerId: userId, blockedId: user.id } },
+      }).catch(() => null),
+    ]);
+
+    // ─── Статистика (messagesCount, chatsCount) ─────────────────────────────
+    const [messagesCount, chatsCount] = await Promise.all([
+      prisma.message.count({ where: { userId } }),
+      prisma.chatMember.count({ where: { userId } }),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -38,13 +92,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ user
         username: target.username,
         displayName: target.displayName,
         avatarUrl: target.avatarUrl,
-        bio: canSee ? target.bio : null,
-        status: canSee ? target.status : null,
-        lastSeen: (canSee && target.settings?.showLastSeen !== false) ? target.lastSeen : null,
+        bio: canSeeProfileExtras ? target.bio : null,
+        status: canSeeProfileExtras ? target.status : null,
+        lastSeen: (canSeeProfileExtras && target.settings?.showLastSeen !== false) ? target.lastSeen : null,
         isOnline: target.settings?.showOnlineStatus === false && !isSelf ? false : target.isOnline,
         createdAt: target.createdAt,
         socialLinks,
-        mutualChatsCount: mutualChats,
+        canSeeProfileExtras,
+        mutualChats,
+        mutualChatsCount: mutualChats.length,
+        stats: { messagesCount, chatsCount },
+        iBlockedThem: !!iBlocked,
+        theyBlockedMe: !!theyBlocked,
+        isSelf,
       },
     });
   } catch (e: any) {
