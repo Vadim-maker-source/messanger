@@ -78,25 +78,47 @@ export default function GCL({ currentUser }: Props) {
 
   const ss = async (ty: string, tid: string, d: any) => { const cid = cidR.current; if (!cid) return; try { await fetch("/api/calls/webrtc/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: ty, callId: cid, targetUserId: tid, ...d }) }); } catch {} };
 
-  const gm = async (f?: string): Promise<MediaStream | null> => { const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; const vc: any = { audio: true }; if (isVideo) { vc.video = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }; if (f) vc.video.facingMode = f; } else vc.video = false;
+  const gm = async (f?: string): Promise<MediaStream | null> => { const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; const vc: any = { audio: true }; if (isVideo) { vc.video = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } }; if (f) vc.video.facingMode = f; } else vc.video = false;
     try { const s = await navigator.mediaDevices.getUserMedia(vc); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {}
-    if (f) { try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {} }
+    if (f) { try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } } }); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {} }
+    // Fallback на 30fps если 60 не получается (старая камера / лимиты браузера)
+    try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }); lr.current = s; if (lv.current) lv.current.srcObject = s; return s; } catch {}
     try { const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); lr.current = s; return s; } catch {}
     lr.current = new MediaStream(); return lr.current; };
 
   const swCam = async () => { const vt = lr.current?.getVideoTracks()[0]; if (!vt) return; const cf = (vt as any).getSettings?.()?.facingMode || "user"; const nf = cf === "user" ? "environment" : "user";
-    try { const ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, facingMode: nf }, audio: false }); const nt = ns.getVideoTracks()[0];
+    try { const ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 }, facingMode: nf }, audio: false }); const nt = ns.getVideoTracks()[0];
       const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(nt);
       if (lr.current) { lr.current.removeTrack(vt); lr.current.addTrack(nt); vt.stop(); if (lv.current) lv.current.srcObject = lr.current; } } catch {} };
 
   const tgScr = async () => { if (shr) { if (srRef.current) { srRef.current.getTracks().forEach(t => t.stop()); srRef.current = null; } const ct = lr.current?.getVideoTracks()[0]; if (ct) { const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(ct); ct.enabled = !vidOff; } if (lv.current) lv.current.srcObject = lr.current; setShr(false); } else { try { const sc = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); srRef.current = sc; if (lv.current) lv.current.srcObject = sc; const st = sc.getVideoTracks()[0]; if (st) { const snd = pc.current?.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video"); if (snd) snd.replaceTrack(st); st.onended = () => tgScr(); } setShr(true); } catch {} } };
 
   // ─── Quality tuning helpers ──────────────────────────────────────────────
-  // Лимит полосы для видео в кбит/с — поднят с дефолтного ~1 Мбит/с до 3 Мбит/с,
-  // что даёт нормальную картинку 720p/1080p. На плохой сети WebRTC сам
-  // адаптивно снизит до доступной полосы.
-  const VIDEO_MAX_BITRATE = 3_000_000;
-  const AUDIO_MAX_BITRATE = 64_000;
+  // Лимиты полосы — подняты выше дефолтных ~1 Мбит/с (видео) и ~32 кбит/с (аудио).
+  // 6 Мбит/с — отличное 1080p@60fps. На плохой сети WebRTC сам адаптивно
+  // снижает до доступной полосы. 128 кбит/с — HD voice через Opus.
+  const VIDEO_MAX_BITRATE = 6_000_000;
+  const AUDIO_MAX_BITRATE = 128_000;
+
+  // Munge SDP: включаем у Opus стерео + FEC + макс. sample rate.
+  // Это безопасное вмешательство в SDP — затрагивает только параметры
+  // существующего m=audio Opus, не меняет codec preference и не ломает
+  // совместимость. Эффект слышен сразу — голос «пухлее», лучше переносит
+  // потери пакетов.
+  const tuneSdp = (sdp: string): string => {
+    return sdp.replace(/a=fmtp:111 ([^\r\n]*)/g, (_match, params) => {
+      const has = (k: string) => new RegExp(`(^|;)\\s*${k}=`).test(params);
+      const additions: string[] = [];
+      if (!has("stereo"))           additions.push("stereo=1");
+      if (!has("sprop-stereo"))     additions.push("sprop-stereo=1");
+      if (!has("maxaveragebitrate"))additions.push(`maxaveragebitrate=${AUDIO_MAX_BITRATE}`);
+      if (!has("maxplaybackrate"))  additions.push("maxplaybackrate=48000");
+      if (!has("useinbandfec"))     additions.push("useinbandfec=1");
+      if (!has("usedtx"))           additions.push("usedtx=0"); // false: не глушим в тишине, иначе слышны "дырки"
+      const sep = params.trim().endsWith(";") || params.trim().length === 0 ? "" : ";";
+      return `a=fmtp:111 ${params}${sep}${additions.join(";")}`;
+    });
+  };
 
   // Поднимаем максимальные битрейты у уже созданных sender'ов. Вызывается
   // после createOffer/createAnswer + setLocalDescription, когда параметры уже
@@ -107,9 +129,12 @@ export default function GCL({ currentUser }: Props) {
       try {
         const params = sender.getParameters();
         if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+        // Высокий network priority — если QoS на сети поддерживается (DSCP),
+        // пакеты медиа получат приоритет над прочим трафиком.
+        (params.encodings[0] as any).networkPriority = "high";
         if (sender.track.kind === "video") {
           params.encodings[0].maxBitrate = VIDEO_MAX_BITRATE;
-          params.encodings[0].maxFramerate = 30;
+          params.encodings[0].maxFramerate = 60;
           params.degradationPreference = "maintain-framerate";
         } else if (sender.track.kind === "audio") {
           params.encodings[0].maxBitrate = AUDIO_MAX_BITRATE;
@@ -119,15 +144,16 @@ export default function GCL({ currentUser }: Props) {
     }
   };
 
-  // Предпочитаем H264 (аппаратное ускорение на 99% устройств) ДО VP9/AV1, что
-  // даёт лучшую совместимость web ↔ Android. VP9 первым стоял раньше — это
-  // вызывало срыв ICE/DTLS на части устройств. Если хочется максимального
-  // сжатия, можно поменять порядок, но H264 — безопасный baseline.
+  // VP9 первый — на 30-40% эффективнее VP8/H264 при том же битрейте, либо
+  // на 30-40% лучше качество при том же битрейте. Поддерживается всеми
+  // современными браузерами и flutter_webrtc на Android. H264 — fallback
+  // на случай если у пира нет VP9 (старый Safari/iOS), AV1 — для топовых
+  // устройств, VP8 — последний resort.
   const prefCodec = (pcc: RTCPeerConnection) => {
     try {
       const caps = (RTCRtpSender as any).getCapabilities?.("video");
       if (!caps?.codecs) return;
-      const order = ["video/H264", "video/VP9", "video/AV1", "video/VP8"];
+      const order = ["video/VP9", "video/H264", "video/AV1", "video/VP8"];
       const sorted = [...caps.codecs].sort((a: any, b: any) => {
         const ai = order.indexOf(a.mimeType); const bi = order.indexOf(b.mimeType);
         return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
@@ -157,12 +183,12 @@ export default function GCL({ currentUser }: Props) {
     };
     pcc.oniceconnectionstatechange = () => { if (pcc.iceConnectionState === "failed") pcc.restartIce(); }; setConn("connecting"); return pcc; };
 
-  const procSig = async (s: any) => { const pcc = pc.current; if (!pcc) return; try { switch (s.type) { case "offer": await pcc.setRemoteDescription({ type: "offer", sdp: s.sdp }); const a = await pcc.createAnswer(); await pcc.setLocalDescription(a); await tune(pcc); if (s.fromUserId) await ss("answer", s.fromUserId, { sdp: a.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); break; case "answer": if (pcc.signalingState !== "stable" && s.sdp) await pcc.setRemoteDescription({ type: "answer", sdp: s.sdp }); break; case "ice-candidate": if (s.candidate && pcc.remoteDescription) await pcc.addIceCandidate({ candidate: s.candidate, sdpMLineIndex: s.sdpMLineIndex, sdpMid: s.sdpMid }); else if (s.candidate) pr.current.push(s); break; case "call-ended": setAct(false); setEndR("peer-left"); pcc.close(); setTimeout(() => cln(), 3000); break; } } catch {} };
+  const procSig = async (s: any) => { const pcc = pc.current; if (!pcc) return; try { switch (s.type) { case "offer": await pcc.setRemoteDescription({ type: "offer", sdp: s.sdp }); const a = await pcc.createAnswer(); if (a.sdp) a.sdp = tuneSdp(a.sdp); await pcc.setLocalDescription(a); await tune(pcc); if (s.fromUserId) await ss("answer", s.fromUserId, { sdp: a.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); break; case "answer": if (pcc.signalingState !== "stable" && s.sdp) await pcc.setRemoteDescription({ type: "answer", sdp: s.sdp }); break; case "ice-candidate": if (s.candidate && pcc.remoteDescription) await pcc.addIceCandidate({ candidate: s.candidate, sdpMLineIndex: s.sdpMLineIndex, sdpMid: s.sdpMid }); else if (s.candidate) pr.current.push(s); break; case "call-ended": setAct(false); setEndR("peer-left"); pcc.close(); setTimeout(() => cln(), 3000); break; } } catch {} };
   const fp = async () => { const sigs = pr.current; pr.current = []; for (const s of sigs) await procSig(s); };
 
   const accept = async () => { if (jr.current) return; jr.current = true; setRing(false); const s = await gm(); mkPC(s); await fp(); jr.current = false; };
   const decline = async () => { if (inc?.callId) await upStatus(inc.callId, "DECLINED"); cln(); };
-  const startOut = async () => { if (jr.current) return; jr.current = true; const s = await gm(); const pid = pidR.current ?? outR.current?.peerId; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; if (!pid) { console.warn("[GCL] startOut: no peerId, abort"); jr.current = false; return; } const pcc = mkPC(s); try { const o = await pcc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo }); await pcc.setLocalDescription(o); await tune(pcc); await ss("offer", pid, { sdp: o.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); } catch { jr.current = false; return; } await fp(); jr.current = false; };
+  const startOut = async () => { if (jr.current) return; jr.current = true; const s = await gm(); const pid = pidR.current ?? outR.current?.peerId; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; if (!pid) { console.warn("[GCL] startOut: no peerId, abort"); jr.current = false; return; } const pcc = mkPC(s); try { const o = await pcc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo }); if (o.sdp) o.sdp = tuneSdp(o.sdp); await pcc.setLocalDescription(o); await tune(pcc); await ss("offer", pid, { sdp: o.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); } catch { jr.current = false; return; } await fp(); jr.current = false; };
   const endCall = async () => { const pid = pidR.current; if (pid) await ss("call-ended", pid, {}); if (cidR.current) await upStatus(cidR.current, "ENDED"); cln(); };
 
   useEffect(() => {
