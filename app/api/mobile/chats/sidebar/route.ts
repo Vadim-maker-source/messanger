@@ -21,6 +21,18 @@ export async function GET(req: NextRequest) {
       orderBy: { updatedAt: "desc" },
     });
 
+    // Загружаем настройки пользователя для всех чатов (pin/archive/mute)
+    const chatIds = allChats.map(c => c.id);
+    let prefsMap: Record<string, any> = {};
+    try {
+      const prefs = await (prisma as any).chatUserPreference.findMany({
+        where: { userId: user.id, chatId: { in: chatIds } },
+      });
+      prefsMap = Object.fromEntries(prefs.map((p: any) => [p.chatId, p]));
+    } catch {
+      // Таблица ещё не создана — игнорируем
+    }
+
     const chatsWithUnread = await Promise.all(
       allChats.map(async (chat) => {
         const unreadCount = await prisma.message.count({
@@ -36,6 +48,7 @@ export async function GET(req: NextRequest) {
           displayImage = partner?.avatarUrl || null;
           partnerId = partner?.id ?? null;
         }
+        const pref = prefsMap[chat.id];
         return {
           id: chat.id,
           type: chat.type,
@@ -45,6 +58,9 @@ export async function GET(req: NextRequest) {
           updatedAt: chat.updatedAt,
           role: chat.members[0]?.role || null,
           partnerId,
+          isPinned: pref?.isPinned ?? false,
+          isArchived: pref?.isArchived ?? false,
+          isMuted: pref?.isMuted ?? false,
           lastMessage: lastMsg
             ? { content: lastMsg.content, createdAt: lastMsg.createdAt, senderId: lastMsg.userId }
             : null,
