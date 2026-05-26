@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.0.109', 'localhost', '192.168.56.1'],
+  // Пропускаем TypeScript-проверку при `next build` — на слабом VPS она съедает
+  // ~500 MB heap'а и валит сборку. TS-проверку запускаем отдельно через
+  // `tsc --noEmit` в dev/CI до коммита.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  // Тот же подход для ESLint — он тоже пробуждается при build.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '1000mb',
