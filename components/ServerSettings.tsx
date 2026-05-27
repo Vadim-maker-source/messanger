@@ -231,17 +231,32 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
       lg: "w-5 h-5"
     };
 
-    const avatarContent = src ? (
+    const isColor = src?.startsWith("#");
+    const letter = (name?.[0] || "S").toUpperCase();
+
+    // Генерируем стабильный цвет из имени
+    const nameColor = (() => {
+      if (!name) return "#7c3aed";
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+      const h = Math.abs(hash) % 360;
+      return `hsl(${h}, 60%, 45%)`;
+    })();
+
+    const avatarContent = src && !isColor ? (
       <img src={src} alt={name || "Avatar"} className="w-full h-full object-cover" />
     ) : (
-      <div className="w-full h-full flex items-center justify-center font-bold bg-gradient-to-br from-violet-500/20 to-purple-500/20">
-        {(name?.[0] || "S").toUpperCase()}
+      <div
+        className="w-full h-full flex items-center justify-center font-bold text-white"
+        style={{ backgroundColor: isColor ? src! : nameColor }}
+      >
+        {letter}
       </div>
     );
 
     return (
       <div className="relative inline-block">
-        <div className={`${sizeClasses[size]} rounded-full overflow-hidden bg-gradient-to-br from-violet-500/20 to-purple-500/20`}>
+        <div className={`${sizeClasses[size]} rounded-full overflow-hidden`}>
           {avatarContent}
         </div>
         {showStatus && (
@@ -681,7 +696,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
             <h3 className="text-lg font-semibold mb-4 text-red-400">Опасная зона</h3>
             <div className="space-y-2">
               <button
-                onClick={() => {/* TODO: Leave server */}}
+                onClick={() => router.push(`/chat/${server.id}/leave`)}
                 className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-red-500/10 rounded-xl transition-all group"
               >
                 <div className="flex items-center gap-3">

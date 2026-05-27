@@ -1683,6 +1683,33 @@ export async function updateChat(chatId: string, data: { name?: string; imageUrl
   return updatedChat;
 }
 
+// --- ПОКИНУТЬ СЕРВЕР ---
+export async function leaveServer(serverId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    select: { ownerId: true, chats: { select: { id: true } } },
+  });
+  if (!server) throw new Error("Server not found");
+  if (server.ownerId === user.id) throw new Error("Owner cannot leave server. Transfer ownership or delete it.");
+
+  // Удаляем из всех чатов сервера
+  for (const chat of server.chats) {
+    await prisma.chatMember.deleteMany({ where: { chatId: chat.id, userId: user.id } });
+    await prisma.chat.update({ where: { id: chat.id }, data: { users: { disconnect: { id: user.id } } } });
+  }
+
+  // Удаляем из участников сервера
+  await prisma.server.update({
+    where: { id: serverId },
+    data: { members: { disconnect: { id: user.id } } },
+  });
+
+  return { success: true };
+}
+
 // --- УДАЛЕНИЕ СЕРВЕРА ---
 export async function deleteServer(serverId: string) {
   const user = await getCurrentUser();

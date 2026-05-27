@@ -18,11 +18,19 @@ export async function PATCH(req: NextRequest) {
       select: { id: true, isOnline: true, lastActive: true },
     });
 
-    await pusherServer.trigger("presence", "user-status-change", {
-      userId: updated.id,
-      isOnline: updated.isOnline,
-      lastActive: updated.lastActive,
+    // Проверяем настройку showOnlineStatus — если отключена, не транслируем статус
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId: user.id },
+      select: { showOnlineStatus: true },
     });
+
+    if (settings?.showOnlineStatus !== false) {
+      await pusherServer.trigger("presence", "user-status-change", {
+        userId: updated.id,
+        isOnline: updated.isOnline,
+        lastActive: updated.lastActive,
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (e: any) {
