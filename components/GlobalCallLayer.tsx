@@ -55,6 +55,8 @@ export default function GCL({ currentUser }: Props) {
   const pidR = useRef<string | null>(null);
   const actR = useRef(false);
   const endRR = useRef("");
+  const myAnswerSent = useRef(false);
+  const myOfferSent = useRef(false);
   const iceR = useRef<RTCConfiguration>(ICE_FALLBACK);
   // Зеркала out/inc через ref — нужны для callback'ов, захваченных в useEffect.
   // Без них setTimeout(startOut, 300) видит state от первого рендера (null),
@@ -74,7 +76,7 @@ export default function GCL({ currentUser }: Props) {
   useEffect(() => { incR.current = inc; }, [inc]);
 
   const upStatus = async (cid: string, st: "ACTIVE" | "ENDED" | "DECLINED") => { try { await fetch("/api/calls/status", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callId: cid, status: st }) }); } catch {} };
-  const cln = async () => { pc.current?.close(); pc.current = null; lr.current?.getTracks().forEach(t => t.stop()); lr.current = null; srRef.current?.getTracks().forEach(t => t.stop()); srRef.current = null; rem?.getTracks().forEach(t => t.stop()); setRem(null); pr.current = []; jr.current = false; cidR.current = null; pidR.current = null; setVis(false); setAct(false); setConn("new"); setEndR(""); setInc(null); setOut(null); setMini(false); setMut(false); setVidOff(false); setShr(false); setRing(false); };
+  const cln = async () => { pc.current?.close(); pc.current = null; lr.current?.getTracks().forEach(t => t.stop()); lr.current = null; srRef.current?.getTracks().forEach(t => t.stop()); srRef.current = null; rem?.getTracks().forEach(t => t.stop()); setRem(null); pr.current = []; jr.current = false; myAnswerSent.current = false; myOfferSent.current = false; cidR.current = null; pidR.current = null; setVis(false); setAct(false); setConn("new"); setEndR(""); setInc(null); setOut(null); setMini(false); setMut(false); setVidOff(false); setShr(false); setRing(false); };
 
   const ss = async (ty: string, tid: string, d: any) => { const cid = cidR.current; if (!cid) return; try { await fetch("/api/calls/webrtc/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: ty, callId: cid, targetUserId: tid, ...d }) }); } catch {} };
 
@@ -183,12 +185,12 @@ export default function GCL({ currentUser }: Props) {
     };
     pcc.oniceconnectionstatechange = () => { if (pcc.iceConnectionState === "failed") pcc.restartIce(); }; setConn("connecting"); return pcc; };
 
-  const procSig = async (s: any) => { const pcc = pc.current; if (!pcc) return; try { switch (s.type) { case "offer": await pcc.setRemoteDescription({ type: "offer", sdp: s.sdp }); const a = await pcc.createAnswer(); if (a.sdp) a.sdp = tuneSdp(a.sdp); await pcc.setLocalDescription(a); await tune(pcc); if (s.fromUserId) await ss("answer", s.fromUserId, { sdp: a.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); break; case "answer": if (pcc.signalingState !== "stable" && s.sdp) await pcc.setRemoteDescription({ type: "answer", sdp: s.sdp }); break; case "ice-candidate": if (s.candidate && pcc.remoteDescription) await pcc.addIceCandidate({ candidate: s.candidate, sdpMLineIndex: s.sdpMLineIndex, sdpMid: s.sdpMid }); else if (s.candidate) pr.current.push(s); break; case "call-ended": setAct(false); setEndR("peer-left"); pcc.close(); setTimeout(() => cln(), 3000); break; } } catch {} };
+  const procSig = async (s: any) => { const pcc = pc.current; if (!pcc) return; try { switch (s.type) { case "offer": await pcc.setRemoteDescription({ type: "offer", sdp: s.sdp }); const a = await pcc.createAnswer(); if (a.sdp) a.sdp = tuneSdp(a.sdp); await pcc.setLocalDescription(a); await tune(pcc); myAnswerSent.current = true; if (s.fromUserId) await ss("answer", s.fromUserId, { sdp: a.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); break; case "answer": if (pcc.signalingState !== "stable" && s.sdp) await pcc.setRemoteDescription({ type: "answer", sdp: s.sdp }); break; case "ice-candidate": if (s.candidate && pcc.remoteDescription) await pcc.addIceCandidate({ candidate: s.candidate, sdpMLineIndex: s.sdpMLineIndex, sdpMid: s.sdpMid }); else if (s.candidate) pr.current.push(s); break; case "call-ended": setAct(false); setEndR("peer-left"); pcc.close(); setTimeout(() => cln(), 3000); break; } } catch {} };
   const fp = async () => { const sigs = pr.current; pr.current = []; for (const s of sigs) await procSig(s); };
 
   const accept = async () => { if (jr.current) return; jr.current = true; setRing(false); const s = await gm(); mkPC(s); await fp(); jr.current = false; };
   const decline = async () => { if (inc?.callId) await upStatus(inc.callId, "DECLINED"); cln(); };
-  const startOut = async () => { if (jr.current) return; jr.current = true; const s = await gm(); const pid = pidR.current ?? outR.current?.peerId; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; if (!pid) { console.warn("[GCL] startOut: no peerId, abort"); jr.current = false; return; } const pcc = mkPC(s); try { const o = await pcc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo }); if (o.sdp) o.sdp = tuneSdp(o.sdp); await pcc.setLocalDescription(o); await tune(pcc); await ss("offer", pid, { sdp: o.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); } catch { jr.current = false; return; } await fp(); jr.current = false; };
+  const startOut = async () => { if (jr.current) return; jr.current = true; myOfferSent.current = true; const s = await gm(); const pid = pidR.current ?? outR.current?.peerId; const cp = incR.current ?? outR.current; const isVideo = cp?.type === "video"; if (!pid) { console.warn("[GCL] startOut: no peerId, abort"); jr.current = false; return; } const pcc = mkPC(s); try { const o = await pcc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: isVideo }); if (o.sdp) o.sdp = tuneSdp(o.sdp); await pcc.setLocalDescription(o); await tune(pcc); await ss("offer", pid, { sdp: o.sdp }); if (cidR.current) upStatus(cidR.current, "ACTIVE"); } catch { jr.current = false; return; } await fp(); jr.current = false; };
   const endCall = async () => { const pid = pidR.current; if (pid) await ss("call-ended", pid, {}); if (cidR.current) await upStatus(cidR.current, "ENDED"); cln(); };
 
   useEffect(() => {
@@ -211,10 +213,10 @@ export default function GCL({ currentUser }: Props) {
   }, []);
 
   useEffect(() => { if (!pusherClient || !currentUser?.id) return; const ch = pusherClient.subscribe(`user-${currentUser.id}`);
-    ch.bind("incoming-call", (p: CP) => { cidR.current = p.callId; setInc(p); setOut(null); setRing(true); setVis(true); setAct(false); setEndR(""); setConn("new"); setSz("medium"); setMini(false); setPos(cr("medium")); });
-    ch.bind("outgoing-call", (p: CP) => { if (!vis) { cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 500); } });
+    ch.bind("incoming-call", (p: CP) => { if (myOfferSent.current || myAnswerSent.current) return; cidR.current = p.callId; setInc(p); setOut(null); setRing(true); setVis(true); setAct(false); setEndR(""); setConn("new"); setSz("medium"); setMini(false); setPos(cr("medium")); });
+    ch.bind("outgoing-call", (p: CP) => { if (!vis && !myOfferSent.current) { cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 500); } });
     ch.bind("webrtc-signal", (s: any) => { if (!pc.current) { pr.current.push(s); return; } procSig(s); });
-    ch.bind("call-accepted-elsewhere", (data: any) => { if (cidR.current === data.callId && !act) { cln(); } });
+    ch.bind("call-accepted-elsewhere", (data: any) => { if (cidR.current === data.callId && !myAnswerSent.current && !myOfferSent.current) { cln(); } });
     const onCE = (e: Event) => { const p = (e as CustomEvent).detail as CP; cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 300); };
     window.addEventListener("global-call-outgoing", onCE);
     return () => { ch.unbind("incoming-call"); ch.unbind("outgoing-call"); ch.unbind("webrtc-signal"); ch.unbind("call-accepted-elsewhere"); window.removeEventListener("global-call-outgoing", onCE); pusherClient.unsubscribe(`user-${currentUser.id}`); };
