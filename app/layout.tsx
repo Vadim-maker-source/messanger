@@ -24,7 +24,7 @@ const sansSerif = Open_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Kyro | Мессенджер",
+  title: "Talky | Мессенджер",
   description: "Многофункциональный мессенджер для общения, обмена файлами и звонков",
 };
 
