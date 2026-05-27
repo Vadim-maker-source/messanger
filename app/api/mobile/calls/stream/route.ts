@@ -58,10 +58,21 @@ export async function POST(req: NextRequest) {
       pusherServer.trigger(`user-${user.id}`, "outgoing-call", { ...payload, chatName }),
     ]).catch((err) => console.error("[Pusher calls/stream error]", err?.message));
 
-    // FCM: входящий звонок — высокоприоритетное уведомление
+    // FCM: входящий звонок — высокоприоритетное уведомление (с учётом настроек)
+    const streamRecipientIds = recipients.filter((u) => u.fcmToken).map((u) => u.id);
+    const streamSettings = await prisma.userSettings.findMany({
+      where: { userId: { in: streamRecipientIds } },
+      select: { userId: true, pushNotifications: true, mutedChats: true },
+    });
+    const streamSettingsMap = new Map(streamSettings.map((s) => [s.userId, s]));
+
     recipients
       .filter((u) => u.fcmToken)
       .forEach((u) => {
+        const settings = streamSettingsMap.get(u.id);
+        if (settings?.pushNotifications === false) return;
+        if (settings?.mutedChats?.includes(chatId)) return;
+
         sendPushNotification({
           token: u.fcmToken!,
           title: callType === "video" ? "📹 Входящий видеозвонок" : "📞 Входящий звонок",

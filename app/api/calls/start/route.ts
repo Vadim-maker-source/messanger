@@ -97,11 +97,22 @@ export async function POST(req: Request) {
       chatName: chatNameForCreator,
     }).catch(() => {});
 
-    // FCM: уведомление о входящем звонке
+    // FCM: уведомление о входящем звонке (с учётом настроек)
     const callerName = (user.displayName || user.username) ?? "Пользователь";
+    const callRecipientIds = chat.users.filter((u) => u.id !== user.id && u.fcmToken).map((u) => u.id);
+    const callSettings = await prisma.userSettings.findMany({
+      where: { userId: { in: callRecipientIds } },
+      select: { userId: true, pushNotifications: true, mutedChats: true },
+    });
+    const callSettingsMap = new Map(callSettings.map((s) => [s.userId, s]));
+
     chat.users
       .filter((u) => u.id !== user.id && u.fcmToken)
       .forEach((u) => {
+        const settings = callSettingsMap.get(u.id);
+        if (settings?.pushNotifications === false) return;
+        if (settings?.mutedChats?.includes(chatId)) return;
+
         const chatName = chat.name || user.displayName || user.username || "Звонок";
         sendPushNotification({
           token: u.fcmToken!,

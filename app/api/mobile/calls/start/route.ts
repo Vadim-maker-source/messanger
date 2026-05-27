@@ -92,11 +92,22 @@ export async function POST(request: NextRequest) {
       chatName: chatNameForCreator,
     }).catch(() => {});
 
-    // FCM уведомления
+    // FCM уведомления (с учётом настроек — замьюченные чаты не получают push)
     const callerName = (user.displayName || user.username) ?? "Пользователь";
+    const callRecipientIds = chat.users.filter((u) => u.id !== user.id && u.fcmToken).map((u) => u.id);
+    const callRecipientSettings = await prisma.userSettings.findMany({
+      where: { userId: { in: callRecipientIds } },
+      select: { userId: true, pushNotifications: true, mutedChats: true },
+    });
+    const callSettingsMap = new Map(callRecipientSettings.map((s) => [s.userId, s]));
+
     chat.users
       .filter((u) => u.id !== user.id && u.fcmToken)
       .forEach((u) => {
+        const settings = callSettingsMap.get(u.id);
+        if (settings?.pushNotifications === false) return;
+        if (settings?.mutedChats?.includes(chatId)) return;
+
         const chatName = chat.name || user.displayName || user.username || "Звонок";
         sendPushNotification({
           token: u.fcmToken!,

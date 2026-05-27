@@ -1280,9 +1280,20 @@ export async function sendMessage(
       : (message.content || "Сообщение");
     const chatTitle = chatWithUsers.name || senderName;
 
+    const recipientIds = chatWithUsers.users.filter((u) => u.id !== user.id && u.fcmToken).map((u) => u.id);
+    const recipientSettings = await prisma.userSettings.findMany({
+      where: { userId: { in: recipientIds } },
+      select: { userId: true, pushNotifications: true, mutedChats: true },
+    });
+    const settingsMap = new Map(recipientSettings.map((s) => [s.userId, s]));
+
     chatWithUsers.users
       .filter((u) => u.id !== user.id && u.fcmToken)
       .forEach((u) => {
+        const settings = settingsMap.get(u.id);
+        if (settings?.pushNotifications === false) return;
+        if (settings?.mutedChats?.includes(chatId)) return;
+
         sendPushNotification({
           token: u.fcmToken!,
           title: chatTitle,

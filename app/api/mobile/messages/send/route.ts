@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     pusherServer.trigger(chatId, "new-message", message).catch(() => {});
 
-    // FCM: отправляем всем участникам кроме отправителя
+    // FCM: отправляем всем участникам кроме отправителя (с учётом настроек)
     const senderName = user.displayName || user.username;
     const msgText = fileUrl
       ? (fileType === "IMAGE" ? "📷 Фото" : fileType === "VIDEO" ? "🎥 Видео" : fileType === "AUDIO" ? "🎤 Голосовое" : "📎 Файл")
@@ -59,17 +59,28 @@ export async function POST(req: NextRequest) {
 
     const chatTitle = (chat as any).name || senderName;
 
+    // Получаем настройки всех получателей
+    const recipientIds = chat.users.filter((u) => u.id !== user.id && u.fcmToken).map((u) => u.id);
+    const recipientSettings = await prisma.userSettings.findMany({
+      where: { userId: { in: recipientIds } },
+      select: { userId: true, pushNotifications: true, mutedChats: true },
+    });
+    const settingsMap = new Map(recipientSettings.map((s) => [s.userId, s]));
+
     chat.users
       .filter((u) => u.id !== user.id && u.fcmToken)
       .forEach((u) => {
-        console.log(`[FCM] sending to user ${u.id}, token: ${u.fcmToken?.slice(0, 20)}...`);
+        const settings = settingsMap.get(u.id);
+        // Пропускаем если push отключены или чат замьючен
+        if (settings?.pushNotifications === false) return;
+        if (settings?.mutedChats?.includes(chatId)) return;
+
         sendPushNotification({
           token: u.fcmToken!,
           title: chatTitle,
           body: `${senderName}: ${msgText}`,
           data: { type: "message", chatId, messageId: message.id },
-        }).then(() => console.log(`[FCM] sent ok to ${u.id}`))
-          .catch((e) => console.error(`[FCM] failed for ${u.id}:`, e));
+        }).catch((e) => console.error(`[FCM] failed for ${u.id}:`, e));
       });
 
     return NextResponse.json({ success: true, data: message });

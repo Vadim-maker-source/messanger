@@ -119,20 +119,28 @@ export async function POST(request: NextRequest) {
               });
 
               if (callee.fcmToken) {
-                sendPushNotification({
-                  token: callee.fcmToken,
-                  title: callTypeStr === 'video' ? '📹 Входящий видеозвонок' : '📞 Входящий звонок',
-                  body: callerName,
-                  data: {
-                    type: 'call',
-                    callId,
-                    callType: callTypeStr,
-                    chatId,
-                    chatName: chatNameForCallee,
-                    callerName,
-                    callerId: user.id,
-                  },
-                }).catch(() => {});
+                const calleeSettings = await prisma.userSettings.findUnique({
+                  where: { userId: targetUserId },
+                  select: { pushNotifications: true, mutedChats: true },
+                });
+                const shouldSend = calleeSettings?.pushNotifications !== false
+                  && !calleeSettings?.mutedChats?.includes(chatId);
+                if (shouldSend) {
+                  sendPushNotification({
+                    token: callee.fcmToken,
+                    title: callTypeStr === 'video' ? '📹 Входящий видеозвонок' : '📞 Входящий звонок',
+                    body: callerName,
+                    data: {
+                      type: 'call',
+                      callId,
+                      callType: callTypeStr,
+                      chatId,
+                      chatName: chatNameForCallee,
+                      callerName,
+                      callerId: user.id,
+                    },
+                  }).catch(() => {});
+                }
               }
             }
           }
