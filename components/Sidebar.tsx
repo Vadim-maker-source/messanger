@@ -210,7 +210,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   };
 
   const getMessageStatusIcon = (status?: string) => {
-    if (status === 'READ') return <CheckCheck size={14} className="text-blue-400" />;
+    if (status === 'READ') return <CheckCheck size={14} className="text-white" />;
     if (status === 'DELIVERED') return <CheckCheck size={14} className="text-white/40" />;
     if (status === 'SENT') return <Clock size={14} className="text-white/20" />;
     return null;
@@ -415,7 +415,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                             <div className="flex items-center justify-between">
                               <h3 className="text-lg font-semibold text-white/90 truncate">{item.title}</h3>
                               <div className="flex items-center gap-1 shrink-0 ml-2">
-                                {!isServer && pref.isPinned && <Pin size={10} className="text-violet-400" />}
+                                {!isServer && pref.isPinned && <Pin size={10} className="text-white" />}
                                 {!isServer && item.lastMessage && <span className="text-[14px] text-white/30">{formatTime(item.lastMessage.createdAt)}</span>}
                                 {isServer && <ChevronRight size={14} className={`text-white/20 transition-transform ${expandedServer === item.id ? 'rotate-90' : ''}`} />}
                               </div>
@@ -436,7 +436,7 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                               </div>
                               {!isServer && (
                                 <div className="flex items-center gap-1 shrink-0 ml-2">
-                                  {pref.isMuted && <BellOff size={12} className="text-white/20" />}
+                                  {pref.isMuted && <BellOff size={12} className="text-white/40" />}
                                   {(item.unreadCount ?? 0) > 0 && !pref.isMuted && (
                                     <div className="min-w-[20px] h-5 bg-red-500 rounded-full flex items-center justify-center px-1.5">
                                       <span className="text-[10px] font-bold text-white">{(item.unreadCount ?? 0) > 99 ? '99+' : item.unreadCount}</span>
@@ -558,50 +558,50 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
         {contextMenu && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
             style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
-            className="bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[200px]"
+            className="bg-[#1e1e24] border border-white/10 rounded-2xl shadow-2xl overflow-hidden min-w-[260px]"
             onClick={e => e.stopPropagation()}
           >
             {(() => {
               const pref = localPrefs[contextMenu.chat.id] ?? { isPinned: false, isArchived: false, isMuted: false };
               return (
-                <div className="py-1">
+                <div className="py-2">
                   <button onClick={() => applyPref(contextMenu.chat.id, { isPinned: !pref.isPinned })}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
-                    {pref.isPinned ? <PinOff size={15} className="text-violet-400" /> : <Pin size={15} className="text-violet-400" />}
+                    className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
+                    {pref.isPinned ? <PinOff size={18} className="text-white" /> : <Pin size={18} className="text-white" />}
                     {pref.isPinned ? 'Открепить' : 'Закрепить'}
                   </button>
                   <button onClick={() => applyPref(contextMenu.chat.id, { isArchived: !pref.isArchived })}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
-                    {pref.isArchived ? <ArchiveRestore size={15} className="text-blue-400" /> : <Archive size={15} className="text-blue-400" />}
+                    className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
+                    {pref.isArchived ? <ArchiveRestore size={18} className="text-white" /> : <Archive size={18} className="text-white" />}
                     {pref.isArchived ? 'Из архива' : 'В архив'}
                   </button>
                   <button onClick={() => applyPref(contextMenu.chat.id, { isMuted: !pref.isMuted })}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
-                    {pref.isMuted ? <Bell size={15} className="text-green-400" /> : <BellOff size={15} className="text-yellow-400" />}
+                    className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
+                    {pref.isMuted ? <Bell size={18} className="text-white" /> : <BellOff size={18} className="text-white" />}
                     {pref.isMuted ? 'Включить уведомления' : 'Заглушить'}
                   </button>
-                  <div className="h-px bg-white/10 my-1" />
+                  <div className="h-px bg-white/10 my-1.5" />
                   <button onClick={() => handleDeleteForMe(contextMenu.chat.id)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
-                    <Trash2 size={15} />
+                    className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-red-400 transition-colors">
+                    <Trash2 size={18} />
                     Удалить у меня
                   </button>
                   <button onClick={() => handleDeleteForAll(contextMenu.chat.id)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
-                    <Trash2 size={15} className="text-red-600" />
+                    className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-red-400 transition-colors">
+                    <Trash2 size={18} className="text-red-600" />
                     Удалить у всех
                   </button>
                   {contextMenu.chat.partnerId && (
                     <button onClick={() => handleToggleBlock(contextMenu.chat.partnerId!)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-orange-400 transition-colors">
-                      {blockedUsers[contextMenu.chat.partnerId] ? <Shield size={15} /> : <ShieldOff size={15} />}
+                      className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-orange-400 transition-colors">
+                      {blockedUsers[contextMenu.chat.partnerId] ? <Shield size={18} /> : <ShieldOff size={18} />}
                       {blockedUsers[contextMenu.chat.partnerId] ? 'Разблокировать' : 'Заблокировать'}
                     </button>
                   )}
                   {contextMenu.chat.type === 'GROUP' && (
                     <button onClick={() => { setContextMenu(null); handleNavigation(`/chat/${contextMenu.chat.id}/leave`); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
-                      <LogOut size={15} />
+                      className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-red-400 transition-colors">
+                      <LogOut size={18} />
                       Покинуть группу
                     </button>
                   )}
@@ -617,30 +617,30 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
         {serverContextMenu && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
             style={{ position: 'fixed', top: serverContextMenu.y, left: serverContextMenu.x, zIndex: 9999 }}
-            className="bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[200px]"
+            className="bg-[#1e1e24] border border-white/10 rounded-2xl shadow-2xl overflow-hidden min-w-[260px]"
             onClick={e => e.stopPropagation()}
           >
-            <div className="py-1">
+            <div className="py-2">
               <button onClick={() => { handleNavigation(`/chat/${serverContextMenu.server.id}/data`); setServerContextMenu(null); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
-                <Settings size={15} className="text-violet-400" />
+                className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
+                <Settings size={18} className="text-violet-400" />
                 Настройки сервера
               </button>
               <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${serverContextMenu.server.id}`); setServerContextMenu(null); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
-                <FolderPlus size={15} className="text-green-400" />
+                className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
+                <FolderPlus size={18} className="text-green-400" />
                 Скопировать ссылку
               </button>
               <button onClick={() => { applyPref(serverContextMenu.server.id, { isArchived: !(localPrefs[serverContextMenu.server.id]?.isArchived) }); setServerContextMenu(null); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-white transition-colors">
+                className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-white transition-colors">
                 {localPrefs[serverContextMenu.server.id]?.isArchived
-                  ? <><ArchiveRestore size={15} className="text-blue-400" />Из архива</>
-                  : <><Archive size={15} className="text-blue-400" />В архив</>}
+                  ? <><ArchiveRestore size={18} className="text-white" />Из архива</>
+                  : <><Archive size={18} className="text-white" />В архив</>}
               </button>
-              <div className="h-px bg-white/10 my-1" />
+              <div className="h-px bg-white/10 my-1.5" />
               <button onClick={() => { handleNavigation(`/chat/${serverContextMenu.server.id}/leave`); setServerContextMenu(null); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 text-sm text-red-400 transition-colors">
-                <LogOut size={15} />
+                className="w-full flex items-center gap-3.5 px-5 py-3 hover:bg-white/10 text-[15px] text-red-400 transition-colors">
+                <LogOut size={18} />
                 Покинуть сервер
               </button>
             </div>
