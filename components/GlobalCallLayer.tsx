@@ -214,9 +214,10 @@ export default function GCL({ currentUser }: Props) {
     ch.bind("incoming-call", (p: CP) => { cidR.current = p.callId; setInc(p); setOut(null); setRing(true); setVis(true); setAct(false); setEndR(""); setConn("new"); setSz("medium"); setMini(false); setPos(cr("medium")); });
     ch.bind("outgoing-call", (p: CP) => { if (!vis) { cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 500); } });
     ch.bind("webrtc-signal", (s: any) => { if (!pc.current) { pr.current.push(s); return; } procSig(s); });
+    ch.bind("call-accepted-elsewhere", (data: any) => { if (cidR.current === data.callId && !act) { cln(); } });
     const onCE = (e: Event) => { const p = (e as CustomEvent).detail as CP; cidR.current = p.callId; pidR.current = p.peerId ?? null; setOut(p); setInc(null); setRing(false); setVis(true); setAct(false); setEndR(""); setConn("connecting"); setSz("medium"); setMini(false); setPos(cr("medium")); setTimeout(() => startOut(), 300); };
     window.addEventListener("global-call-outgoing", onCE);
-    return () => { ch.unbind("incoming-call"); ch.unbind("outgoing-call"); ch.unbind("webrtc-signal"); window.removeEventListener("global-call-outgoing", onCE); pusherClient.unsubscribe(`user-${currentUser.id}`); };
+    return () => { ch.unbind("incoming-call"); ch.unbind("outgoing-call"); ch.unbind("webrtc-signal"); ch.unbind("call-accepted-elsewhere"); window.removeEventListener("global-call-outgoing", onCE); pusherClient.unsubscribe(`user-${currentUser.id}`); };
   }, [currentUser.id]);
 
   useEffect(() => { if (!p || act) return; const ex = TO - (Date.now() - new Date(p.createdAt).getTime()); if (ex <= 0) { upStatus(p.callId, "ENDED"); cln(); return; } const t = setTimeout(async () => { if (!act) { await upStatus(p.callId, "ENDED"); cln(); } }, ex); return () => clearTimeout(t); }, [p, act]);

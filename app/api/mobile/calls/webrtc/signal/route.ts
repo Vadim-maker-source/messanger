@@ -67,6 +67,11 @@ export async function POST(request: NextRequest) {
 
     console.log("[Mobile Signal] Sent", type, "to user", targetUserId, "for call", callId);
 
+    // Если answer — уведомляем другие устройства этого пользователя что звонок принят
+    if (type === 'answer') {
+      await pusherServer.trigger(`user-${user.id}`, "call-accepted-elsewhere", { callId });
+    }
+
     // Если это первый offer — сохраняем SDP и отправляем уведомление
     if (type === 'offer') {
       try {
