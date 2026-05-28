@@ -32,6 +32,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useStatus } from "./StatusProvider";
 import InviteManager from "./InviteManager";
+import AddMemberDialog from "./AddMemberDialog";
 import { updateServer, createServerChannel, deleteServer, deleteChat } from "@/app/lib/api/chat";
 import { uploadChatImage } from "@/app/lib/yandex-storage";
 import {
@@ -67,6 +68,8 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
   const [newChannelType, setNewChannelType] = useState<"CHANNEL" | "GROUP">("CHANNEL");
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
   const [deletingChannelId, setDeletingChannelId] = useState<string | null>(null);
+
+  const [showAddMember, setShowAddMember] = useState(false);
 
   const handleDeleteChannel = async (channelId: string) => {
     if (!confirm("Вы уверены, что хотите удалить этот канал? Все сообщения будут удалены.")) {
@@ -438,7 +441,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           {isAdmin && (
           <button
-            onClick={() => {/* TODO: Add member */}}
+            onClick={() => setShowAddMember(true)}
             className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
           >
             <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-violet-500/20 flex items-center justify-center group-hover:bg-violet-500/30 transition-colors">
@@ -474,21 +477,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
         </div>
 
         {/* Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <div className="bg-[#121214]/50 rounded-2xl p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center">
-                <Server size={18} className="text-violet-400" />
-              </div>
-              <h3 className="font-semibold">Тип</h3>
-            </div>
-            <p className="text-white/80 text-lg font-medium">Сервер</p>
-            <div className="flex items-center gap-2 mt-3 text-sm">
-              {getAccessIcon()}
-              <span className="text-white/60">{getAccessText()}</span>
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
           <div className="bg-[#121214]/50 rounded-2xl p-5">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center">
@@ -613,7 +602,7 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
                 </div>
                 {isAdmin && (
                   <button
-                    onClick={() => {/* TODO: Add member */}}
+                    onClick={() => setShowAddMember(true)}
                     className="p-2 hover:bg-white/5 rounded-xl transition-colors"
                   >
                     <UserPlus size={18} className="text-violet-400" />
@@ -874,6 +863,15 @@ export default function ServerSettings({ server, currentUser, isAdmin }: ServerS
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Add Member Dialog */}
+      <AddMemberDialog
+        open={showAddMember}
+        onClose={() => setShowAddMember(false)}
+        serverId={server.id}
+        existingMemberIds={server.members?.map((m: any) => m.id) || []}
+        onAdded={() => router.refresh()}
+      />
 
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {

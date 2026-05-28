@@ -42,6 +42,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useStatus } from "./StatusProvider";
 import { deleteChat, updateChat } from "@/app/lib/api/chat";
+import AddMemberDialog from "./AddMemberDialog";
 import { uploadChatImage } from "@/app/lib/yandex-storage";
 import InviteManager from "./InviteManager";
 import {
@@ -78,6 +79,7 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
   const [isSaving, setIsSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(chat.imageUrl);
+  const [showAddMember, setShowAddMember] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -598,7 +600,7 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             {isAdmin && (
             <button
-              onClick={() => {/* TODO: Add member */}}
+              onClick={() => setShowAddMember(true)}
               className="bg-[#121214]/50 hover:bg-[#121214] rounded-2xl p-4 transition-all group"
             >
               <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-violet-500/20 flex items-center justify-center group-hover:bg-violet-500/30 transition-colors">
@@ -785,7 +787,7 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
                 </div>
                 {isAdmin && (
                   <button
-                    onClick={() => {/* TODO: Add member */}}
+                    onClick={() => setShowAddMember(true)}
                     className="p-2 hover:bg-white/5 rounded-xl transition-colors"
                   >
                     <UserPlus size={18} className="text-violet-400" />
@@ -1086,6 +1088,15 @@ export default function ChatSettings({ chat, currentUser, isAdmin, subChats, onC
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Add Member Dialog */}
+      <AddMemberDialog
+        open={showAddMember}
+        onClose={() => setShowAddMember(false)}
+        chatId={chat.id}
+        existingMemberIds={chat.members?.map((m: any) => m.id) || []}
+        onAdded={() => router.refresh()}
+      />
 
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {

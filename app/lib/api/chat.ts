@@ -1683,6 +1683,53 @@ export async function updateChat(chatId: string, data: { name?: string; imageUrl
   return updatedChat;
 }
 
+// --- ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ В СЕРВЕР (и во все его каналы) ---
+export async function addServerMember(serverId: string, userId: string) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) throw new Error("Unauthorized");
+
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    select: { ownerId: true, chats: { select: { id: true } } },
+  });
+  if (!server) throw new Error("Server not found");
+
+  // Проверка прав: только владелец сервера или его админ может добавлять
+  if (server.ownerId !== currentUser.id) {
+    throw new Error("Forbidden");
+  }
+
+  // Проверка настроек целевого пользователя
+  const targetSettings = await prisma.userSettings.findUnique({
+    where: { userId },
+    select: { allowAddToChats: true }
+  });
+  if ((targetSettings?.allowAddToChats || "everyone") === "nobody") {
+    throw new Error("Пользователь запретил добавление в чаты");
+  }
+
+  // Подключаем в server.members
+  await prisma.server.update({
+    where: { id: serverId },
+    data: { members: { connect: { id: userId } } },
+  });
+
+  // Подключаем во все чаты сервера
+  for (const chat of server.chats) {
+    await prisma.chat.update({
+      where: { id: chat.id },
+      data: { users: { connect: { id: userId } } },
+    });
+    await prisma.chatMember.upsert({
+      where: { userId_chatId: { userId, chatId: chat.id } },
+      update: {},
+      create: { userId, chatId: chat.id, role: 'MEMBER' },
+    });
+  }
+
+  return { success: true };
+}
+
 // --- ПОКИНУТЬ СЕРВЕР ---
 export async function leaveServer(serverId: string) {
   const user = await getCurrentUser();
