@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
+import { pusherServer } from "@/app/lib/pusher";
 
 // POST /api/mobile/users/block  { targetId }  — block
 // DELETE /api/mobile/users/block { targetId }  — unblock
@@ -40,6 +41,16 @@ export async function POST(req: NextRequest) {
       create: { blockerId: user.id, blockedId: targetId },
     });
 
+    // Уведомляем обоих участников в реальном времени
+    pusherServer.trigger(`user-${user.id}`, "block-update", {
+      targetId,
+      iBlockedThem: true,
+    }).catch(() => {});
+    pusherServer.trigger(`user-${targetId}`, "block-update", {
+      targetId: user.id,
+      theyBlockedMe: true,
+    }).catch(() => {});
+
     return NextResponse.json({ success: true, data: { blocked: true } });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });
@@ -55,6 +66,17 @@ export async function DELETE(req: NextRequest) {
     if (!targetId) return NextResponse.json({ success: false, error: "targetId required" }, { status: 400 });
 
     await (prisma as any).block.deleteMany({ where: { blockerId: user.id, blockedId: targetId } });
+
+    // Уведомляем обоих участников в реальном времени
+    pusherServer.trigger(`user-${user.id}`, "block-update", {
+      targetId,
+      iBlockedThem: false,
+    }).catch(() => {});
+    pusherServer.trigger(`user-${targetId}`, "block-update", {
+      targetId: user.id,
+      theyBlockedMe: false,
+    }).catch(() => {});
+
     return NextResponse.json({ success: true, data: { blocked: false } });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });

@@ -13,40 +13,54 @@ export async function POST(req: NextRequest) {
 
     const allMemberIds: string[] = Array.from(new Set([...userIds, user.id]));
 
-    const server = await prisma.server.create({
-      data: {
-        name: name.trim(),
-        imageUrl: imageUrl || null,
-        access: access as AccessType,
-        ownerId: user.id,
-        inviteCode: Math.random().toString(36).substring(2, 12),
-        members: { connect: allMemberIds.map((id) => ({ id })) },
-      },
-    });
+    // Нормализуем тип канала. Flutter присылает 'TEXT' для текстовых чатов,
+    // а Prisma enum допускает только PRIVATE | GROUP | CHANNEL.
+    const normalizeType = (t: any): ChatType => {
+      const v = String(t || "").toUpperCase();
+      if (v === "TEXT" || v === "GROUP") return "GROUP";
+      return "CHANNEL";
+    };
 
     const defaultChannels = channels.length > 0 ? channels : [{ name: "общий", type: "CHANNEL" }];
-    const createdChats = [];
 
-    for (const ch of defaultChannels) {
-      const chat = await prisma.chat.create({
+    // Создаём всё атомарно. Если хоть один канал упадёт — всё откатывается.
+    const result = await prisma.$transaction(async (tx) => {
+      const server = await tx.server.create({
         data: {
-          name: ch.name || "канал",
-          type: (ch.type as ChatType) || "CHANNEL",
+          name: name.trim(),
+          imageUrl: imageUrl || null,
           access: access as AccessType,
-          serverId: server.id,
-          users: { connect: allMemberIds.map((id) => ({ id })) },
+          ownerId: user.id,
+          inviteCode: Math.random().toString(36).substring(2, 12),
+          members: { connect: allMemberIds.map((id) => ({ id })) },
         },
       });
-      for (const memberId of allMemberIds) {
-        await prisma.chatMember.create({
-          data: { userId: memberId, chatId: chat.id, role: memberId === user.id ? "CREATOR" : "MEMBER" },
-        });
-      }
-      createdChats.push(chat);
-    }
 
-    return NextResponse.json({ success: true, data: { ...server, chats: createdChats } });
+      const createdChats = [];
+      for (const ch of defaultChannels) {
+        const chat = await tx.chat.create({
+          data: {
+            name: String(ch.name || "канал").trim() || "канал",
+            type: normalizeType(ch.type),
+            access: access as AccessType,
+            serverId: server.id,
+            users: { connect: allMemberIds.map((id) => ({ id })) },
+          },
+        });
+        for (const memberId of allMemberIds) {
+          await tx.chatMember.create({
+            data: { userId: memberId, chatId: chat.id, role: memberId === user.id ? "CREATOR" : "MEMBER" },
+          });
+        }
+        createdChats.push(chat);
+      }
+
+      return { ...server, chats: createdChats };
+    });
+
+    return NextResponse.json({ success: true, data: result });
   } catch (e: any) {
+    console.error("[create server] error:", e);
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });
   }
 }

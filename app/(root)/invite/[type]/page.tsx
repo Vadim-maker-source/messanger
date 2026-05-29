@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Users, Hash, Shield, Server, Loader2, ArrowRight, XCircle, CheckCircle } from "lucide-react";
 import { joinByInvite } from "@/app/lib/api/invite";
+import OpenInAppBanner from "@/components/OpenInAppBanner";
 
 interface InvitePageProps {
   params: Promise<{
@@ -142,6 +143,7 @@ export default function InvitePage({ params }: InvitePageProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0f] to-[#050508] flex items-center justify-center p-4">
+      <OpenInAppBanner path={`/invite/${code}`} />
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -28,6 +28,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Chat not found or access denied" }, { status: 403 });
     }
 
+    // Проверка блокировки в приватных чатах
+    if (chat.type === "PRIVATE") {
+      const partner = chat.users.find((u) => u.id !== user.id);
+      if (partner) {
+        const block = await (prisma as any).block.findFirst({
+          where: {
+            OR: [
+              { blockerId: user.id, blockedId: partner.id },
+              { blockerId: partner.id, blockedId: user.id },
+            ],
+          },
+        });
+        if (block) {
+          const youBlocked = block.blockerId === user.id;
+          return NextResponse.json(
+            {
+              success: false,
+              error: youBlocked
+                ? "Вы заблокировали этого пользователя"
+                : "Этот пользователь заблокировал вас",
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     const message = await prisma.message.create({
       data: {
         chatId,

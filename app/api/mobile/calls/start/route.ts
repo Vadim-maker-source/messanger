@@ -34,6 +34,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Chat not found" }, { status: 404 });
     }
 
+    // Проверка блокировки в приватных звонках
+    if (chat.type === "PRIVATE") {
+      const partner = chat.users.find((u) => u.id !== user.id);
+      if (partner) {
+        const block = await (prisma as any).block.findFirst({
+          where: {
+            OR: [
+              { blockerId: user.id, blockedId: partner.id },
+              { blockerId: partner.id, blockedId: user.id },
+            ],
+          },
+        });
+        if (block) {
+          const youBlocked = block.blockerId === user.id;
+          return NextResponse.json(
+            {
+              success: false,
+              error: youBlocked
+                ? "Вы заблокировали этого пользователя"
+                : "Этот пользователь заблокировал вас",
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
     const callId = `chat_${chatId}_${Date.now()}`;
     const call = await prisma.call.create({
       data: {
