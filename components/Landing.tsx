@@ -259,7 +259,7 @@ export default function Landing({ user }: { user?: LandingUser | null }) {
 
 // ─── Header ─────────────────────────────────────────────────────────────────
 
-function Header() {
+function Header({ user }: { user?: LandingUser | null }) {
   return (
     <header className="fixed top-3 left-0 right-0 z-40 flex justify-center px-3">
       <div className="backdrop-blur-2xl bg-white/[0.03] border border-white/[0.07] rounded-full shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] w-full max-w-3xl">
@@ -274,15 +274,46 @@ function Header() {
             <a href="#team"   className="hover:text-white transition-colors">Команда</a>
             <a href="#donate" className="hover:text-white transition-colors">Поддержать</a>
           </nav>
-          <Link
-            href="/sign-in"
-            className="px-4 py-1.5 rounded-full bg-violet-500 text-white text-md font-semibold hover:bg-violet-400 transition-colors shrink-0"
-          >
-            Войти
-          </Link>
+          {user ? (
+            <UserChip user={user} />
+          ) : (
+            <Link
+              href="/sign-in"
+              className="px-4 py-1.5 rounded-full bg-violet-500 text-white text-md font-semibold hover:bg-violet-400 transition-colors shrink-0"
+            >
+              Войти
+            </Link>
+          )}
         </div>
       </div>
     </header>
+  );
+}
+
+function UserChip({ user }: { user: LandingUser }) {
+  const name = user.displayName || user.username;
+  const initial = (name || "?").trim().charAt(0).toUpperCase();
+  return (
+    <Link
+      href="/chats"
+      className="group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors shrink-0"
+    >
+      {user.avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={user.avatarUrl}
+          alt=""
+          className="w-7 h-7 rounded-full object-cover"
+        />
+      ) : (
+        <div className="w-7 h-7 rounded-full bg-violet-500 grid place-items-center text-black font-bold text-sm">
+          {initial}
+        </div>
+      )}
+      <span className="text-[14px] font-medium text-white/85 group-hover:text-white max-w-[120px] truncate">
+        {name}
+      </span>
+    </Link>
   );
 }
 
