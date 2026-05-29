@@ -151,12 +151,9 @@ export default function LoginPage() {
           {/* Правая колонка — форма */}
           <div className="order-1 lg:order-2 w-full max-w-md mx-auto lg:max-w-none">
             <div className="login-card relative">
-              {/* Светящаяся подложка */}
-              <div className="absolute -inset-2 rounded-[32px] bg-violet-500/15 blur-3xl opacity-70 pointer-events-none" />
-
               <form
                 onSubmit={handleLogin}
-                className="relative rounded-[28px] border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl p-7 md:p-8 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]"
+                className="relative rounded-[28px] border border-white/[0.06] bg-[rgba(14,14,20,0.85)] backdrop-blur-xl p-7 md:p-8 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]"
               >
                 <div className="flex items-center justify-between mb-7">
                   <div>
