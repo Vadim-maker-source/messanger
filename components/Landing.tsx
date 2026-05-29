@@ -62,7 +62,7 @@ const FACTS = [
 
 // ─── Главный компонент ──────────────────────────────────────────────────────
 
-export default function LandingPage() {
+export default function Landing({ user }: { user?: LandingUser | null }) {
   const main = useRef<HTMLDivElement>(null);
   const [openDev, setOpenDev] = useState<Developer | null>(null);
 
@@ -240,7 +240,7 @@ export default function LandingPage() {
       </div>
 
       <div className="scroll-progress fixed top-0 left-0 right-0 h-[2px] bg-violet-500 origin-left scale-x-0 z-50" />
-      <Header />
+      <Header user={user} />
       <Hero />
       <SectionDivider />
       <ProjectAbout />
