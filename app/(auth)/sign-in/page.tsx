@@ -74,7 +74,7 @@ export default function LoginPage() {
       if (res?.error) {
         setError("Неверный email или пароль");
       } else if (res?.ok) {
-        router.push("/");
+        router.push("/chats");
         router.refresh();
       } else {
         setError("Не удалось войти");
