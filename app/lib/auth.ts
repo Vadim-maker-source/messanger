@@ -22,12 +22,16 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Нужны email и пароль');
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+        const email = credentials.email.trim();
+
+        // Поиск без учёта регистра (если в БД "User@Mail.com" а ввели "user@mail.com")
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
         });
 
         if (!user || !user.hashedPassword) {
-          throw new Error('Пользователь не найден');
+          // Generic ошибка чтобы не раскрывать существование email
+          throw new Error('Неверный email или пароль');
         }
 
         const isPasswordCorrect = await bcrypt.compare(
@@ -36,7 +40,7 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isPasswordCorrect) {
-          throw new Error('Неверный пароль');
+          throw new Error('Неверный email или пароль');
         }
 
         return {
