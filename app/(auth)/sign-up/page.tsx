@@ -90,6 +90,27 @@ export default function RegisterPage() {
     setError("");
 
     try {
+      const isVercel =
+        typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app");
+
+      if (isVercel) {
+        // На vercel-домене регистрация идёт через proxy → 194.87.201.226.
+        // В Network виден только относительный путь.
+        const r = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.success) {
+          throw new Error(data.error || "Не удалось зарегистрироваться");
+        }
+        // Pre-registration без авто-логина → сразу на страницу благодарности
+        router.push("/welcome");
+        return;
+      }
+
+      // На основном домене — обычный flow с server action + автоматический вход
       const res = await registerUser(formData);
       if (res.success) {
         const loginRes = await signIn("credentials", {
@@ -100,12 +121,7 @@ export default function RegisterPage() {
         if (loginRes?.error) {
           setError("Ошибка при автоматическом входе");
         } else {
-          // Если мы на vercel-домене — это «pre-registration» режим:
-          // редиректим на страницу благодарности.
-          // На основном сервере — направляем на главную (где доступен чат).
-          const isVercel =
-            typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app");
-          router.push(isVercel ? "/welcome" : "/");
+          router.push("/");
         }
       }
     } catch (err: any) {
