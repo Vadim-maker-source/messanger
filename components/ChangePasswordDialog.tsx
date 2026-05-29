@@ -26,7 +26,9 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
   const [method, setMethod] = useState<DeliveryMethod>("push");
   const [deliveredTo, setDeliveredTo] = useState("");
 
-  const [generatedCode, setGeneratedCode] = useState("");
+  // Код, введённый пользователем (для отправки на сервер при смене пароля).
+  // Сам код генерируется ИСКЛЮЧИТЕЛЬНО на сервере.
+  const [enteredCodeStr, setEnteredCodeStr] = useState("");
   const [enteredCode, setEnteredCode] = useState(["", "", "", "", "", ""]);
   const [resendIn, setResendIn] = useState(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -37,7 +39,7 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
         setStep("form");
         setOldPassword(""); setNewPassword(""); setConfirmPassword("");
         setEnteredCode(["", "", "", "", "", ""]);
-        setError(""); setGeneratedCode(""); setResendIn(0);
+        setError(""); setEnteredCodeStr(""); setResendIn(0);
         setForgotMode(false); setMethod("push"); setDeliveredTo("");
       }, 250);
     }
@@ -49,14 +51,12 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
-
-  const sendCode = async (code: string, isForgot: boolean, methodOverride?: DeliveryMethod) => {
+  // Сервер сам генерирует код. Клиент только запрашивает доставку.
+  const sendCode = async (isForgot: boolean, methodOverride?: DeliveryMethod) => {
     const r = await fetch("/api/auth/send-2fa-code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        code,
         action: isForgot ? "reset-password" : "change-password",
         method: methodOverride || method,
       }),
@@ -65,7 +65,7 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     return { ok: r.ok && data.success, deliveredTo: data.deliveredTo as string | undefined };
   };
 
-  // Обычный поток: заполнили старый+новый → шлём код через push
+  // Обычный поток: знает старый пароль → 2FA не обязателен.
   const handleStartVerify = async () => {
     setError("");
     if (!oldPassword) return setError("Введите текущий пароль");
@@ -73,16 +73,8 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     if (newPassword !== confirmPassword) return setError("Пароли не совпадают");
     if (newPassword === oldPassword) return setError("Новый пароль должен отличаться от старого");
 
-    setLoading(true);
-    const code = generateCode();
-    setGeneratedCode(code);
-    const { ok } = await sendCode(code, false, "push");
-    setLoading(false);
-
-    if (!ok) return setError("Не удалось отправить код");
-    setStep("verify");
-    setResendIn(60);
-    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    // Меняем пароль сразу с oldPassword (сервер сам валидирует)
+    await doChangePassword(oldPassword, newPassword);
   };
 
   // Забыли пароль: переходим к выбору способа
@@ -97,9 +89,7 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     setMethod(m);
     setLoading(true);
     setError("");
-    const code = generateCode();
-    setGeneratedCode(code);
-    const { ok, deliveredTo: to } = await sendCode(code, true, m);
+    const { ok, deliveredTo: to } = await sendCode(true, m);
     setLoading(false);
 
     if (!ok) {
@@ -115,9 +105,7 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
   const handleResend = async () => {
     if (resendIn > 0) return;
     setLoading(true);
-    const code = generateCode();
-    setGeneratedCode(code);
-    const { ok, deliveredTo: to } = await sendCode(code, forgotMode);
+    const { ok, deliveredTo: to } = await sendCode(forgotMode);
     setEnteredCode(["", "", "", "", "", ""]);
     setLoading(false);
     if (ok) {
@@ -155,29 +143,25 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     else inputRefs.current[Math.min(pasted.length, 5)]?.focus();
   };
 
-  const verifyCode = async (code: string) => {
-    if (code !== generatedCode) {
-      setError("Неверный код");
-      setEnteredCode(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
-      return;
-    }
-    if (forgotMode) {
-      setStep("new-password");
-      setError("");
-      return;
-    }
-    await doChangePassword(oldPassword, newPassword);
+  // В forgot-режиме код проверяется на сервере при смене пароля.
+  // Здесь только переход к экрану ввода нового пароля.
+  const verifyCode = (code: string) => {
+    setEnteredCodeStr(code);
+    setError("");
+    setStep("new-password");
   };
 
-  const doChangePassword = async (oldPwd: string, newPwd: string) => {
+  const doChangePassword = async (oldPwd: string, newPwd: string, code?: string) => {
     setLoading(true);
     setError("");
     try {
+      const body: Record<string, string> = { newPassword: newPwd };
+      if (code) body.code = code;
+      else body.oldPassword = oldPwd;
       const r = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd, forgot: forgotMode }),
+        body: JSON.stringify(body),
       });
       const data = await r.json();
       if (!data.success) setError(data.error || "Ошибка смены пароля");
@@ -196,7 +180,8 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     setError("");
     if (newPassword.length < 6) return setError("Пароль должен быть не короче 6 символов");
     if (newPassword !== confirmPassword) return setError("Пароли не совпадают");
-    await doChangePassword("", newPassword);
+    // В forgot-режиме передаём введённый код — сервер сам его проверит
+    await doChangePassword("", newPassword, enteredCodeStr);
   };
 
   const handleBack = () => {

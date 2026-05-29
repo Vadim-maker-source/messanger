@@ -3,19 +3,32 @@ import { prisma } from "@/app/lib/prisma";
 import { pusherServer } from "@/app/lib/pusher";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 import { sendPushNotification } from "@/app/lib/firebase-admin";
+import { LIMITS, asId, asFileType, asUrl, unauthorized, badRequest, forbidden, errorResponse } from "@/app/lib/validate";
+import { checkRateLimit, rateLimited } from "@/app/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getMobileUserFromRequest(req);
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
+    if (!user) return unauthorized();
 
-    const body = await req.json();
-    const { chatId, content, fileUrl, fileType, replyToId } = body;
-    if (!chatId || (!String(content || "").trim() && !fileUrl)) {
-      return NextResponse.json({ success: false, error: "chatId and content/file are required" }, { status: 400 });
+    // Anti-spam: 30 сообщений за 10 секунд
+    const rl = checkRateLimit(req, "send-msg", { limit: 30, windowMs: 10_000 }, user.id);
+    if (!rl.ok) return rateLimited(rl);
+
+    const body = await req.json().catch(() => ({}));
+    const chatId = asId(body.chatId);
+    const content = typeof body.content === "string" ? body.content : "";
+    const fileUrl = body.fileUrl ? asUrl(body.fileUrl) : null;
+    const fileType = body.fileType ? asFileType(body.fileType) : null;
+    const replyToId = body.replyToId ? asId(body.replyToId) : null;
+
+    if (!chatId) return badRequest("chatId required");
+    if (!content.trim() && !fileUrl) return badRequest("Пустое сообщение");
+    if (content.length > LIMITS.MESSAGE_CONTENT) {
+      return badRequest(`Сообщение слишком длинное (макс ${LIMITS.MESSAGE_CONTENT})`);
     }
+    if (body.fileUrl && !fileUrl) return badRequest("Некорректный fileUrl");
+    if (body.fileType && !fileType) return badRequest("Некорректный fileType");
 
     const chat = await prisma.chat.findFirst({
       where: { id: chatId, users: { some: { id: user.id } } },
@@ -111,7 +124,7 @@ export async function POST(req: NextRequest) {
       });
 
     return NextResponse.json({ success: true, data: message });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (e) {
+    return errorResponse(e, "send-message");
   }
 }

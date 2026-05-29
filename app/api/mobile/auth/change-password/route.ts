@@ -2,32 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
 import { prisma } from "@/app/lib/prisma";
+import { verifyCode } from "@/app/lib/two-factor";
+import { checkRateLimit, rateLimited } from "@/app/lib/rate-limit";
+import { LIMITS, unauthorized, badRequest, errorResponse } from "@/app/lib/validate";
 
 /**
  * POST /api/mobile/auth/change-password
- * Body: { oldPassword, newPassword, forgot?: boolean }
+ * Body: { oldPassword?, newPassword, code? }
+ *
+ * Два сценария:
+ *  1. Знает старый пароль:    { oldPassword, newPassword }
+ *  2. Забыл (через 2FA-код):  { code, newPassword }
+ *
+ * Без кода или без старого пароля — нельзя.
  */
 export async function POST(request: NextRequest) {
   try {
     const currentUser = await getMobileUserFromRequest(request);
-    if (!currentUser) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!currentUser) return unauthorized();
+
+    // Защита от brute-force старого пароля
+    const rl = checkRateLimit(request, "change-pass", { limit: 5, windowMs: 60_000 }, currentUser.id);
+    if (!rl.ok) return rateLimited(rl);
+
+    const body = await request.json().catch(() => ({}));
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+    const oldPassword = typeof body.oldPassword === "string" ? body.oldPassword : "";
+    const code = typeof body.code === "string" ? body.code.trim() : "";
+
+    if (!newPassword) return badRequest("Введите новый пароль");
+    if (newPassword.length < LIMITS.PASSWORD_MIN) {
+      return badRequest(`Пароль должен быть не короче ${LIMITS.PASSWORD_MIN} символов`);
     }
-
-    const { oldPassword, newPassword, forgot } = await request.json();
-
-    if (!newPassword) {
-      return NextResponse.json(
-        { success: false, error: "newPassword is required" },
-        { status: 400 }
-      );
-    }
-
-    if (newPassword.length < 6) {
-      return NextResponse.json(
-        { success: false, error: "Пароль должен быть не короче 6 символов" },
-        { status: 400 }
-      );
+    if (newPassword.length > LIMITS.PASSWORD_MAX) {
+      return badRequest("Пароль слишком длинный");
     }
 
     const user = await prisma.user.findUnique({
@@ -36,26 +44,24 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user?.hashedPassword) {
-      return NextResponse.json(
-        { success: false, error: "Пользователь не найден" },
-        { status: 404 }
-      );
+      return badRequest("Пользователь не найден");
     }
 
-    if (!forgot) {
-      if (!oldPassword) {
-        return NextResponse.json(
-          { success: false, error: "Введите текущий пароль" },
-          { status: 400 }
-        );
+    // Проверка авторизации смены: либо старый пароль, либо валидный 2FA-код
+    if (code) {
+      const v = verifyCode(currentUser.id, "reset-password", code);
+      if (!v.ok) {
+        const msg =
+          v.reason === "expired" ? "Код истёк, запросите новый"
+            : v.reason === "too_many_attempts" ? "Превышено число попыток"
+            : v.reason === "not_found" ? "Запросите код заново"
+            : "Неверный код";
+        return badRequest(msg);
       }
+    } else {
+      if (!oldPassword) return badRequest("Введите текущий пароль");
       const isValid = await bcrypt.compare(oldPassword, user.hashedPassword);
-      if (!isValid) {
-        return NextResponse.json(
-          { success: false, error: "Старый пароль неверный" },
-          { status: 400 }
-        );
-      }
+      if (!isValid) return badRequest("Старый пароль неверный");
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (e) {
+    return errorResponse(e, "change-password");
   }
 }

@@ -2,21 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { pusherServer } from "@/app/lib/pusher";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
+import { asId, unauthorized, badRequest, forbidden, notFound, errorResponse } from "@/app/lib/validate";
 
+/**
+ * Пересылка сообщения. Проверки:
+ *  1. Пользователь — участник исходного чата (иначе нельзя читать)
+ *  2. Пользователь — участник целевого чата (иначе нельзя писать)
+ */
 export async function POST(req: NextRequest) {
   try {
     const user = await getMobileUserFromRequest(req);
-    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!user) return unauthorized();
 
-    const { messageId, targetChatId } = await req.json();
-    if (!messageId || !targetChatId)
-      return NextResponse.json({ success: false, error: "messageId and targetChatId required" }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const messageId = asId(body.messageId);
+    const targetChatId = asId(body.targetChatId);
+    if (!messageId || !targetChatId) return badRequest("messageId and targetChatId required");
 
     const original = await prisma.message.findUnique({
       where: { id: messageId },
-      include: { user: true, chat: true },
+      include: {
+        user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        chat: { select: { id: true, name: true, type: true, users: { where: { id: user.id }, select: { id: true } } } },
+      },
     });
-    if (!original) return NextResponse.json({ success: false, error: "Message not found" }, { status: 404 });
+    if (!original) return notFound("Сообщение не найдено");
+
+    // 1. Имеет ли пользователь доступ к исходному чату?
+    if (original.chat.users.length === 0) return forbidden("Нет доступа к исходному чату");
+
+    // 2. Является ли пользователь участником целевого чата?
+    const target = await prisma.chat.findFirst({
+      where: { id: targetChatId, users: { some: { id: user.id } } },
+      select: { id: true },
+    });
+    if (!target) return forbidden("Вы не участник целевого чата");
 
     const sourceName = original.chat.name || (original.chat.type === "PRIVATE" ? "Личный чат" : "Чат");
 
@@ -37,9 +57,9 @@ export async function POST(req: NextRequest) {
       include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
     });
 
-    await pusherServer.trigger(targetChatId, "new-message", forwarded);
+    pusherServer.trigger(targetChatId, "new-message", forwarded).catch(() => {});
     return NextResponse.json({ success: true, data: forwarded });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (e) {
+    return errorResponse(e, "messages-forward");
   }
 }

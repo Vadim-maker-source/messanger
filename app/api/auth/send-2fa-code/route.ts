@@ -4,61 +4,59 @@ import { sendPushNotification } from "@/app/lib/firebase-admin";
 import { pusherServer } from "@/app/lib/pusher";
 import { sendVerificationEmail } from "@/app/lib/mail";
 import { prisma } from "@/app/lib/prisma";
+import { issueCode } from "@/app/lib/two-factor";
+import { checkRateLimit, rateLimited } from "@/app/lib/rate-limit";
+import { unauthorized, badRequest, errorResponse } from "@/app/lib/validate";
 
 /**
  * POST /api/auth/send-2fa-code
- * Принимает код от клиента и доставляет его пользователю выбранным способом.
+ * Body: { action?: string, method?: "push" | "email" }
  *
- * Body: { code: string, action?: string, method?: "push" | "email" }
+ * Сервер генерирует и хранит код. Клиент его не видит.
  */
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
+    if (!user) return unauthorized();
 
-    const { code, action, method } = await request.json();
-    if (!code || typeof code !== "string" || code.length < 4) {
-      return NextResponse.json({ success: false, error: "Invalid code" }, { status: 400 });
-    }
+    const minRl = checkRateLimit(request, "2fa-min", { limit: 3, windowMs: 60_000 }, user.id);
+    if (!minRl.ok) return rateLimited(minRl);
+    const hourRl = checkRateLimit(request, "2fa-hour", { limit: 10, windowMs: 3_600_000 }, user.id);
+    if (!hourRl.ok) return rateLimited(hourRl);
 
-    const deliveryMethod: "push" | "email" = method === "email" ? "email" : "push";
+    const body = await request.json().catch(() => ({}));
+    const action = typeof body.action === "string" ? body.action : "verify";
+    const method = body.method === "email" ? "email" : "push";
+
+    const code = issueCode(user.id, action);
+
     const actionLabel =
       action === "change-password" ? "Подтверждение смены пароля"
         : action === "reset-password" ? "Восстановление пароля"
         : "Код подтверждения";
 
-    if (deliveryMethod === "email") {
+    if (method === "email") {
       const userData = await prisma.user.findUnique({
         where: { id: user.id },
         select: { email: true },
       });
-
-      if (!userData?.email) {
-        return NextResponse.json(
-          { success: false, error: "У аккаунта не указан email" },
-          { status: 400 }
-        );
-      }
+      if (!userData?.email) return badRequest("У аккаунта не указан email");
 
       try {
         await sendVerificationEmail({ to: userData.email, code, action });
-      } catch (e: any) {
-        console.error("[send-2fa-code] email failed:", e?.message);
+      } catch {
         return NextResponse.json(
           { success: false, error: "Не удалось отправить письмо" },
           { status: 500 }
         );
       }
 
-      // Маскируем email для UI: a***@gmail.com
-      const masked = userData.email.replace(/^(.)(.*)(@.+)$/, (_, a, b, c) => a + "*".repeat(Math.max(b.length, 1)) + c);
+      const masked = userData.email.replace(/^(.)(.*)(@.+)$/,
+        (_, a, b, c) => a + "*".repeat(Math.max(b.length, 1)) + c);
       return NextResponse.json({ success: true, deliveredTo: masked });
     }
 
-    // method === "push"
-    pusherServer.trigger(`user-${user.id}`, "2fa-code", { code, action }).catch(() => {});
+    pusherServer.trigger(`user-${user.id}`, "2fa-code", { action }).catch(() => {});
 
     const userWithToken = await prisma.user.findUnique({
       where: { id: user.id },
@@ -66,16 +64,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (userWithToken?.fcmToken) {
-      await sendPushNotification({
+      sendPushNotification({
         token: userWithToken.fcmToken,
         title: actionLabel,
         body: `Ваш код: ${code}`,
-        data: { type: "2fa", code, action: action || "verify" },
+        data: { type: "2fa", code, action },
       }).catch(() => {});
     }
 
     return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (e) {
+    return errorResponse(e, "send-2fa-code-web");
   }
 }

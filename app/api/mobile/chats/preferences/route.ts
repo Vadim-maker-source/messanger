@@ -1,33 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { getMobileUserFromRequest } from "@/app/lib/mobile-auth";
+import { asId, asBool, unauthorized, badRequest, forbidden, errorResponse } from "@/app/lib/validate";
 
 /**
  * PATCH /api/mobile/chats/preferences
- * 
- * Тело: { chatId, isPinned?, isArchived?, isMuted? }
- * 
- * Обновляет настройки чата для текущего пользователя (закрепление,
- * архивирование, заглушение уведомлений).
+ * Body: { chatId, isPinned?, isArchived?, isMuted? }
+ *
+ * Изменяет личные настройки чата. Доступно только участникам чата.
  */
 export async function PATCH(req: NextRequest) {
   try {
     const user = await getMobileUserFromRequest(req);
-    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!user) return unauthorized();
 
-    const { chatId, isPinned, isArchived, isMuted } = await req.json();
-    if (!chatId) return NextResponse.json({ success: false, error: "chatId required" }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const chatId = asId(body.chatId);
+    if (!chatId) return badRequest("chatId required");
 
-    const data: any = {};
-    if (isPinned !== undefined) data.isPinned = isPinned;
-    if (isArchived !== undefined) data.isArchived = isArchived;
-    if (isMuted !== undefined) data.isMuted = isMuted;
+    // Проверка членства в чате
+    const member = await prisma.chat.findFirst({
+      where: { id: chatId, users: { some: { id: user.id } } },
+      select: { id: true },
+    });
+    if (!member) return forbidden("Вы не участник этого чата");
+
+    const data: Record<string, boolean> = {};
+    if (body.isPinned !== undefined) data.isPinned = asBool(body.isPinned);
+    if (body.isArchived !== undefined) data.isArchived = asBool(body.isArchived);
+    if (body.isMuted !== undefined) data.isMuted = asBool(body.isMuted);
 
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ success: false, error: "No fields to update" }, { status: 400 });
+      return badRequest("Нет полей для обновления");
     }
 
-    // Upsert — создаст запись если нет, обновит если есть
     const pref = await (prisma as any).chatUserPreference.upsert({
       where: { userId_chatId: { userId: user.id, chatId } },
       update: data,
@@ -35,7 +41,7 @@ export async function PATCH(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: pref });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (e) {
+    return errorResponse(e, "chat-preferences");
   }
 }

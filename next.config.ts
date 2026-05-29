@@ -10,7 +10,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: '1000mb',
+      // 60 МБ — с запасом для видео; всё, что больше — отвергается.
+      // Защита от DoS через гигантские payloads.
+      bodySizeLimit: '60mb',
     },
   },
   images: {
