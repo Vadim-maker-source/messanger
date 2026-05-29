@@ -69,6 +69,18 @@ export type VerifyResult =
  * При превышении лимита попыток — также удаляет.
  */
 export function verifyCode(userId: string, action: string, code: string): VerifyResult {
+  return checkCode(userId, action, code, /* consume */ true);
+}
+
+/**
+ * Проверка БЕЗ удаления (для предварительной валидации на UI-шаге OTP).
+ * Счётчик попыток инкрементируется как обычно.
+ */
+export function peekCode(userId: string, action: string, code: string): VerifyResult {
+  return checkCode(userId, action, code, /* consume */ false);
+}
+
+function checkCode(userId: string, action: string, code: string, consume: boolean): VerifyResult {
   const k = key(userId, action);
   const entry = store.get(k);
 
@@ -92,7 +104,7 @@ export function verifyCode(userId: string, action: string, code: string): Verify
     return { ok: false, reason: "invalid" };
   }
 
-  store.delete(k);
+  if (consume) store.delete(k);
   return { ok: true };
 }
 

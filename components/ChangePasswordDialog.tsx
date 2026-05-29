@@ -8,13 +8,29 @@ import Image from "next/image";
 interface Props {
   open: boolean;
   onClose: () => void;
+  /**
+   * Режим работы:
+   *  • "authed" (по умолчанию) — для залогиненного пользователя из настроек
+   *  • "guest"  — для незалогиненного, нужен ввод email на старте
+   */
+  mode?: "authed" | "guest";
+  /** Предзаполненный email (для guest-режима из формы входа). */
+  initialEmail?: string;
 }
 
-type Step = "form" | "choose-method" | "verify" | "new-password" | "success";
+type Step = "form" | "email" | "choose-method" | "verify" | "new-password" | "success";
 type DeliveryMethod = "push" | "email";
 
-export default function ChangePasswordDialog({ open, onClose }: Props) {
-  const [step, setStep] = useState<Step>("form");
+export default function ChangePasswordDialog({
+  open,
+  onClose,
+  mode = "authed",
+  initialEmail = "",
+}: Props) {
+  const isGuest = mode === "guest";
+
+  const [step, setStep] = useState<Step>(isGuest ? "email" : "form");
+  const [guestEmail, setGuestEmail] = useState(initialEmail);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -22,7 +38,7 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotMode, setForgotMode] = useState(isGuest);
   const [method, setMethod] = useState<DeliveryMethod>("push");
   const [deliveredTo, setDeliveredTo] = useState("");
 
@@ -36,14 +52,15 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) {
       setTimeout(() => {
-        setStep("form");
+        setStep(isGuest ? "email" : "form");
+        setGuestEmail(initialEmail);
         setOldPassword(""); setNewPassword(""); setConfirmPassword("");
         setEnteredCode(["", "", "", "", "", ""]);
         setError(""); setEnteredCodeStr(""); setResendIn(0);
-        setForgotMode(false); setMethod("push"); setDeliveredTo("");
+        setForgotMode(isGuest); setMethod("push"); setDeliveredTo("");
       }, 250);
     }
-  }, [open]);
+  }, [open, isGuest, initialEmail]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -53,6 +70,22 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
 
   // Сервер сам генерирует код. Клиент только запрашивает доставку.
   const sendCode = async (isForgot: boolean, methodOverride?: DeliveryMethod) => {
+    if (isGuest) {
+      const r = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: guestEmail,
+          method: methodOverride || method,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      return {
+        ok: r.ok && data.success,
+        deliveredTo: data.deliveredTo as string | undefined,
+        error: data.error as string | undefined,
+      };
+    }
     const r = await fetch("/api/auth/send-2fa-code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -62,7 +95,11 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
       }),
     });
     const data = await r.json().catch(() => ({}));
-    return { ok: r.ok && data.success, deliveredTo: data.deliveredTo as string | undefined };
+    return {
+      ok: r.ok && data.success,
+      deliveredTo: data.deliveredTo as string | undefined,
+      error: data.error as string | undefined,
+    };
   };
 
   // Обычный поток: знает старый пароль → 2FA не обязателен.
@@ -84,16 +121,15 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     setStep("choose-method");
   };
 
-  // Выбор способа доставки в режиме "забыли пароль"
   const handleChooseMethod = async (m: DeliveryMethod) => {
     setMethod(m);
     setLoading(true);
     setError("");
-    const { ok, deliveredTo: to } = await sendCode(true, m);
+    const { ok, deliveredTo: to, error: serverError } = await sendCode(true, m);
     setLoading(false);
 
     if (!ok) {
-      setError(m === "email" ? "Не удалось отправить письмо" : "Не удалось отправить код");
+      setError(serverError || (m === "email" ? "Не удалось отправить письмо" : "Не удалось отправить код"));
       return;
     }
     if (to) setDeliveredTo(to);
@@ -105,13 +141,15 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
   const handleResend = async () => {
     if (resendIn > 0) return;
     setLoading(true);
-    const { ok, deliveredTo: to } = await sendCode(forgotMode);
+    const { ok, deliveredTo: to, error: serverError } = await sendCode(forgotMode);
     setEnteredCode(["", "", "", "", "", ""]);
     setLoading(false);
     if (ok) {
       if (to) setDeliveredTo(to);
       setResendIn(60);
       inputRefs.current[0]?.focus();
+    } else if (serverError) {
+      setError(serverError);
     }
   };
 
@@ -143,26 +181,64 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     else inputRefs.current[Math.min(pasted.length, 5)]?.focus();
   };
 
-  // В forgot-режиме код проверяется на сервере при смене пароля.
-  // Здесь только переход к экрану ввода нового пароля.
-  const verifyCode = (code: string) => {
-    setEnteredCodeStr(code);
+  // В forgot-режиме сначала проверяем код на сервере (без consume),
+  // только при успешной проверке переходим к шагу new-password.
+  const verifyCode = async (code: string) => {
     setError("");
-    setStep("new-password");
+    if (!isGuest) {
+      // Для авторизованного пользователя проверка кода произойдёт на финальном шаге
+      setEnteredCodeStr(code);
+      setStep("new-password");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const r = await fetch("/api/auth/verify-reset-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail, code }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!data.success) {
+        setError(data.error || "Неверный код");
+        setEnteredCode(["", "", "", "", "", ""]);
+        inputRefs.current[0]?.focus();
+        return;
+      }
+      setEnteredCodeStr(code);
+      setStep("new-password");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const doChangePassword = async (oldPwd: string, newPwd: string, code?: string) => {
     setLoading(true);
     setError("");
     try {
-      const body: Record<string, string> = { newPassword: newPwd };
-      if (code) body.code = code;
-      else body.oldPassword = oldPwd;
-      const r = await fetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      let r: Response;
+      if (isGuest) {
+        // PATCH /api/auth/reset-password { email, code, newPassword }
+        r = await fetch("/api/auth/reset-password", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: guestEmail,
+            code: code || enteredCodeStr,
+            newPassword: newPwd,
+          }),
+        });
+      } else {
+        const body: Record<string, string> = { newPassword: newPwd };
+        if (code) body.code = code;
+        else body.oldPassword = oldPwd;
+        r = await fetch("/api/auth/change-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
       const data = await r.json();
       if (!data.success) setError(data.error || "Ошибка смены пароля");
       else {
@@ -188,9 +264,12 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
     setError("");
     if (step === "verify") {
       setStep(forgotMode ? "choose-method" : "form");
-    } else if (step === "choose-method" || step === "new-password") {
-      setStep("form");
-      if (step === "choose-method") setForgotMode(false);
+    } else if (step === "choose-method") {
+      // В guest-режиме возвращаемся к вводу email; в authed — к старому паролю
+      if (isGuest) setStep("email");
+      else { setStep("form"); setForgotMode(false); }
+    } else if (step === "new-password") {
+      setStep(isGuest ? "verify" : "form");
     }
   };
 
@@ -272,6 +351,48 @@ export default function ChangePasswordDialog({ open, onClose }: Props) {
           {/* Content */}
           <div className="px-7 pt-6 pb-7">
             <AnimatePresence mode="wait">
+              {step === "email" && (
+                <motion.div
+                  key="email"
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-5"
+                >
+                  <div className="text-center space-y-1">
+                    <h2 className="text-2xl font-semibold text-white tracking-tight">Восстановление пароля</h2>
+                    <p className="text-sm text-white/50">Введите email от аккаунта</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-white/50 ml-1.5">Email</label>
+                    <input
+                      type="email"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      placeholder="example@mail.com"
+                      autoFocus
+                      className="w-full px-4 py-3 bg-[#1f1f26] rounded-2xl text-white text-sm outline-none focus:ring-1 focus:ring-violet-500/40 transition-all"
+                    />
+                  </div>
+
+                  {error && <ErrorBox text={error} />}
+
+                  <button
+                    onClick={() => {
+                      setError("");
+                      if (!guestEmail || !guestEmail.includes("@")) {
+                        return setError("Введите корректный email");
+                      }
+                      setStep("choose-method");
+                    }}
+                    disabled={loading}
+                    className="w-full py-3.5 bg-violet-600 hover:bg-violet-500 active:bg-violet-700 rounded-2xl font-medium text-white transition-colors disabled:opacity-50 flex items-center justify-center"
+                  >
+                    Продолжить
+                  </button>
+                </motion.div>
+              )}
+
               {step === "form" && (
                 <motion.div
                   key="form"

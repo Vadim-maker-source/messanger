@@ -34,7 +34,7 @@ interface SidebarItem {
   updatedAt?: Date;
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function ChatLayout({ children }: { children: React.ReactNode }) {
     const [items, setItems] = useState<SidebarItem[]>([]);
     const [modalType, setModalType] = useState<'SERVER' | 'CHAT' | 'CHANNEL' | null>(null);
     const [user, setUser] = useState<any>(null);
@@ -62,25 +62,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         fetchData();
     }, [loadSidebarData]);
 
-    // Подписка на обновления сайдбара и непрочитанных
     useEffect(() => {
         if (!user?.id) return;
 
         const channel = pusherClient.subscribe(`user-${user.id}`);
-        
+
         const handleSidebarUpdate = () => {
-            console.log("Sidebar update received");
             loadSidebarData();
         };
-        
+
         const handleUnreadUpdate = () => {
-            console.log("Unread update received");
             loadSidebarData();
         };
-        
+
         channel.bind("sidebar-update", handleSidebarUpdate);
         channel.bind("unread-update", handleUnreadUpdate);
-        
+
         return () => {
             channel.unbind("sidebar-update", handleSidebarUpdate);
             channel.unbind("unread-update", handleUnreadUpdate);
@@ -123,10 +120,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </StatusProvider>
             </main>
 
-            <CreateModal 
+            <CreateModal
                 isOpen={!!modalType}
-                onClose={handleCloseCreate} 
-                type={modalType} 
+                onClose={handleCloseCreate}
+                type={modalType}
             />
         </div>
     );
