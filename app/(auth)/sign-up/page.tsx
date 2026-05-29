@@ -100,7 +100,12 @@ export default function RegisterPage() {
         if (loginRes?.error) {
           setError("Ошибка при автоматическом входе");
         } else {
-          router.push("/");
+          // Если мы на vercel-домене — это «pre-registration» режим:
+          // редиректим на страницу благодарности.
+          // На основном сервере — направляем на главную (где доступен чат).
+          const isVercel =
+            typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app");
+          router.push(isVercel ? "/welcome" : "/");
         }
       }
     } catch (err: any) {
