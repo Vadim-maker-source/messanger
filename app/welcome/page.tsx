@@ -5,6 +5,7 @@ import Link from "next/link";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Check, Sparkles, ArrowLeft } from "lucide-react";
+import Image from "next/image";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(useGSAP);
@@ -132,16 +133,9 @@ export default function WelcomePage() {
       <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-10">
         <div className="w-full max-w-2xl text-center">
           {/* Бейдж с галочкой */}
-          <div className="w-badge inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-violet-500 mb-8 shadow-[0_0_60px_rgba(168,85,247,0.4)]">
-            <Check size={36} className="text-white" strokeWidth={3} />
+          <div className="flex justify-center">
+            <Image src="/images/success-payment.png" alt="Спасибо хорошо" width={128} height={128} className="flex items-center justify-center rounded-3xl mb-8 shadow-[0_0_60px_rgba(168,85,247,0.4)]" />
           </div>
-
-          {/* Тэг */}
-          <div className="w-text inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] backdrop-blur-md mb-6">
-            <Sparkles size={12} className="text-emerald-400" />
-            <span className="text-xs text-white/70 tracking-wide">вы в списке</span>
-          </div>
-
           {/* Заголовок */}
           <h1 className="w-title font-black tracking-tighter leading-[0.95] text-5xl md:text-7xl lg:text-8xl mb-6">
             Спасибо за{" "}
