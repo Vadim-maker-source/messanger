@@ -6,6 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
 import Image from "next/image";
+import SiteHeader from "@/components/SiteHeader";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -240,7 +241,7 @@ export default function Landing({ user }: { user?: LandingUser | null }) {
       </div>
 
       <div className="scroll-progress fixed top-0 left-0 right-0 h-[2px] bg-violet-500 origin-left scale-x-0 z-50" />
-      <Header user={user} />
+      <SiteHeader user={user} />
       <Hero />
       <SectionDivider />
       <ProjectAbout />
@@ -253,74 +254,6 @@ export default function Landing({ user }: { user?: LandingUser | null }) {
       <Footer />
 
       <DeveloperPanel dev={openDev} onClose={() => setOpenDev(null)} />
-    </div>
-  );
-}
-
-// ─── Header ─────────────────────────────────────────────────────────────────
-
-function Header({ user }: { user?: LandingUser | null }) {
-  return (
-    <header className="fixed top-3 left-0 right-0 z-40 flex justify-center px-3">
-      <div className="backdrop-blur-2xl bg-white/[0.03] border border-white/[0.07] rounded-full shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] w-full max-w-3xl">
-        <div className="pl-5 pr-2 h-12 flex items-center justify-between gap-6">
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <Image src="/images/icon.png" alt="Talky" width={28} height={28} className="rounded-full" />
-            <span className="font-bold text-lg tracking-tight">talky</span>
-          </Link>
-          <nav className="hidden md:flex items-center gap-6 text-md font-medium text-white/70">
-            <a href="#about"  className="hover:text-white transition-colors">О проекте</a>
-            <a href="#facts"  className="hover:text-white transition-colors">Возможности</a>
-            <a href="#team"   className="hover:text-white transition-colors">Команда</a>
-            <a href="#donate" className="hover:text-white transition-colors">Поддержать</a>
-          </nav>
-          {user ? (
-            <UserChip user={user} />
-          ) : (
-            <Link
-              href="/sign-in"
-              className="px-4 py-1.5 rounded-full bg-violet-500 text-white text-md font-semibold hover:bg-violet-400 transition-colors shrink-0"
-            >
-              Войти
-            </Link>
-          )}
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function UserChip({ user }: { user: LandingUser }) {
-  const name = user.displayName || user.username;
-  const initial = (name || "?").trim().charAt(0).toUpperCase();
-  return (
-    <Link
-      href="/chats"
-      className="group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors shrink-0"
-    >
-      {user.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={user.avatarUrl}
-          alt=""
-          className="w-7 h-7 rounded-full object-cover"
-        />
-      ) : (
-        <div className="w-7 h-7 rounded-full bg-violet-500 grid place-items-center text-black font-bold text-sm">
-          {initial}
-        </div>
-      )}
-      <span className="text-[14px] font-medium text-white/85 group-hover:text-white max-w-[120px] truncate">
-        {name}
-      </span>
-    </Link>
-  );
-}
-
-function Logo() {
-  return (
-    <div className="w-7 h-7 rounded-xl bg-violet-500 grid place-items-center">
-      <span className="text-black font-black text-lg leading-none">t</span>
     </div>
   );
 }
@@ -801,7 +734,7 @@ function Footer() {
     <footer className="relative border-t border-white/[0.06] py-10 px-6">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-2">
-          <Logo />
+          <Image src="/images/icon.png" alt="Talky" width={28} height={28} className="rounded-full" />
           <span className="font-semibold tracking-tight">talky</span>
           <span className="text-xs text-white/30 ml-3">© 2026 · made with 💜</span>
         </div>
