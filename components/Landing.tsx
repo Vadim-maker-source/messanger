@@ -250,6 +250,8 @@ export default function Landing({ user }: { user?: LandingUser | null }) {
       <SectionDivider />
       <Team onPick={setOpenDev} />
       <SectionDivider />
+      <FAQSection />
+      <SectionDivider />
       <Donate />
       <Footer />
 
@@ -722,6 +724,140 @@ function DonateStat({ amount, label, highlight = false }: { amount: string; labe
       </div>
       <div className="text-[11px] text-white/45 uppercase tracking-wider mt-0.5">
         {label}
+      </div>
+    </div>
+  );
+}
+
+// ─── FAQ ────────────────────────────────────────────────────────────────────
+
+interface FaqItem {
+  q: string;
+  a: string;
+}
+
+const FAQ: FaqItem[] = [
+  {
+    q: "Что такое Talky?",
+    a: "Talky — это open-source мессенджер с фокусом на качественные звонки и приватность. Никакой рекламы, никакой продажи данных — только общение.",
+  },
+  {
+    q: "Сколько стоит пользоваться?",
+    a: "Talky бесплатный. Проект существует на пожертвования через DonationAlerts — поддержать можно по желанию.",
+  },
+  {
+    q: "Где хранятся мои данные?",
+    a: "На наших серверах в России (Yandex Cloud). Сообщения и файлы не передаются третьим лицам и не используются для тренировки моделей или рекламы.",
+  },
+  {
+    q: "Зашифрованы ли сообщения?",
+    a: "Звонки идут через WebRTC с DTLS-шифрованием end-to-end. Текстовые сообщения шифруются при передаче (TLS) и хранятся в зашифрованной БД на сервере.",
+  },
+  {
+    q: "На каких платформах есть Talky?",
+    a: "Веб-версия работает в любом современном браузере. Мобильное приложение доступно на Android (iOS — в работе).",
+  },
+  {
+    q: "Можно ли создавать группы и серверы?",
+    a: "Да. Поддерживаются приватные чаты, групповые чаты и сервера с каналами — как в Discord. Приглашать можно по ссылке.",
+  },
+  {
+    q: "Использовался ли вайбкодинг?",
+    a: "Нет. Мы не используем вайбкдинг и не планируем. Все функции разрабатываются на основе реальных потребностей. Использовался Claude Opus 4.7 для генерации текстов, но с тщательной ручной доработкой и отбором, а также для тестрования безопасности мессенджера на уязвимости к атакам, инъекциям, XSS, .",
+  },
+];
+
+function FAQSection() {
+  const [open, setOpen] = useState<number | null>(0);
+
+  return (
+    <section id="faq" className="section-fade relative px-6 py-32">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-end justify-between mb-14">
+          <h2 className="reveal-title text-4xl md:text-6xl font-black tracking-tighter leading-[0.95]">
+            <span className="inline-block overflow-hidden align-bottom">
+              <span className="reveal-line inline-block">частые</span>
+            </span>
+            <br />
+            <span className="inline-block overflow-hidden align-bottom">
+              <span className="reveal-line inline-block text-violet-500">вопросы</span>
+            </span>
+          </h2>
+          <span className="text-xs text-white/40 uppercase tracking-[0.2em] hidden md:block font-mono">
+            faq / {FAQ.length}
+          </span>
+        </div>
+
+        {/* Единый блок с разделителями между вопросами */}
+        <div className="rounded-3xl bg-white/[0.02] backdrop-blur-md border border-white/[0.05] divide-y divide-white/[0.06] overflow-hidden">
+          {FAQ.map((item, i) => (
+            <FaqRow
+              key={i}
+              item={item}
+              index={i}
+              isOpen={open === i}
+              onToggle={() => setOpen(open === i ? null : i)}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FaqRow({
+  item,
+  index,
+  isOpen,
+  onToggle,
+}: {
+  item: FaqItem;
+  index: number;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={`faq-row group transition-colors duration-300 ${isOpen ? "bg-white/[0.02]" : "hover:bg-white/[0.015]"}`}>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-6 px-7 py-7 text-left"
+      >
+        <div className="flex items-center gap-5 min-w-0">
+          <span className="text-xs font-mono text-white/30 tracking-wider shrink-0">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <span
+            className={`text-lg md:text-2xl font-semibold tracking-tight truncate transition-colors ${
+              isOpen ? "text-white" : "text-white/85 group-hover:text-white"
+            }`}
+          >
+            {item.q}
+          </span>
+        </div>
+        {/* Стрелочка вниз — поворачивается на 180° при открытии */}
+        <span
+          className={`shrink-0 w-11 h-11 rounded-full grid place-items-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            isOpen
+              ? "bg-violet-500 text-white rotate-180"
+              : "bg-white/[0.04] border border-white/[0.08] text-white/60 group-hover:text-white group-hover:bg-white/[0.08]"
+          }`}
+          aria-hidden
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 6L8 11L13 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      <div
+        className={`grid transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <p className="px-7 pb-7 pl-[4.25rem] text-base md:text-lg text-white/65 leading-relaxed">
+            {item.a}
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -38,6 +38,7 @@ export default function SiteHeader({ user, home = "/" }: Props) {
             <Link href={anchor("/#facts")}  className="hover:text-white transition-colors">Возможности</Link>
             <Link href="/stack" className="hover:text-white transition-colors">Стек</Link>
             <Link href={anchor("/#team")}   className="hover:text-white transition-colors">Команда</Link>
+            <Link href={anchor("/#faq")}    className="hover:text-white transition-colors">FAQ</Link>
             <Link href={anchor("/#donate")} className="hover:text-white transition-colors">Поддержать</Link>
           </nav>
           {user ? <UserChip user={user} /> : <LoginButton />}
