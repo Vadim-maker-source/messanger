@@ -15,7 +15,11 @@ interface Tech {
   name: string;
   category: string;
   description: string;
+  /** simpleicons.org slug, либо null если используется customIcon */
   slug: string | null;
+  /** Локальный путь к иконке, если её нет в simpleicons */
+  customIcon?: string;
+  /** Цвет для подсветки (hex, без #) */
   color: string;
 }
 
@@ -25,6 +29,7 @@ const TECH_STACK: Tech[] = [
   { name: "React",         category: "Frontend",   description: "UI-библиотека, hooks, suspense",           slug: "react",       color: "61DAFB" },
   { name: "TypeScript",    category: "Frontend",   description: "Типизация, строгий strict-mode",           slug: "typescript",  color: "3178C6" },
   { name: "Tailwind CSS",  category: "Frontend",   description: "Utility-first стилизация",                 slug: "tailwindcss", color: "06B6D4" },
+  { name: "shadcn/ui",     category: "Frontend",   description: "Компоненты на Tailwind + Radix",           slug: "shadcnui",    color: "ffffff" },
   { name: "GSAP",          category: "Animations", description: "Скролл-анимации, морфинг, timelines",      slug: "greensock",   color: "88CE02" },
   { name: "Framer Motion", category: "Animations", description: "React-анимации UI и переходов",            slug: "framer",      color: "0055FF" },
 
@@ -32,7 +37,7 @@ const TECH_STACK: Tech[] = [
   { name: "Node.js",       category: "Backend",    description: "Runtime для серверных функций",            slug: "nodedotjs",   color: "5FA04E" },
   { name: "Prisma",        category: "Backend",    description: "Type-safe ORM для PostgreSQL",             slug: "prisma",      color: "ffffff" },
   { name: "PostgreSQL",    category: "Database",   description: "Реляционная БД пользователей и сообщений", slug: "postgresql",  color: "4169E1" },
-  { name: "NextAuth",      category: "Auth",       description: "Сессии, JWT, OAuth-провайдеры",            slug: null,          color: "A855F7" },
+  { name: "NextAuth",      category: "Auth",       description: "Сессии, JWT, OAuth-провайдеры",            slug: null,          customIcon: "/images/auth-logo.png", color: "A855F7" },
 
   // Real-time
   { name: "WebRTC",        category: "Real-time",  description: "P2P видео-звонки и аудио",                 slug: "webrtc",      color: "FFFFFF" },
@@ -47,6 +52,12 @@ const TECH_STACK: Tech[] = [
   { name: "Firebase",      category: "Cloud",      description: "FCM push-уведомления",                     slug: "firebase",    color: "FFCA28" },
   { name: "Yandex Cloud",  category: "Cloud",      description: "S3-совместимое хранилище медиа",           slug: "yandexcloud", color: "5282FF" },
   { name: "Vercel",        category: "Hosting",    description: "Хостинг лендинга и pre-registration",      slug: "vercel",      color: "ffffff" },
+
+  // DevOps / Infrastructure
+  { name: "Linux",         category: "DevOps",     description: "Серверная ОС, основа всей инфраструктуры", slug: "linux",       color: "FCC624" },
+  { name: "Docker",        category: "DevOps",     description: "Контейнеризация сервисов и БД",            slug: "docker",      color: "2496ED" },
+  { name: "Nginx",         category: "DevOps",     description: "Reverse-proxy и раздача статики",          slug: "nginx",       color: "009639" },
+  { name: "GitHub",        category: "DevOps",     description: "Хранение кода и CI/CD-пайплайны",          slug: "github",      color: "ffffff" },
 ];
 
 export default function StackContent({ user }: { user?: SiteHeaderUser | null }) {
@@ -222,7 +233,15 @@ function TechCard({ tech, index }: { tech: Tech; index: number }) {
 
         {/* Аватарка с эффектом перехода */}
         <div className="relative shrink-0 w-16 h-16 rounded-2xl bg-black/40 border border-white/[0.06] flex items-center justify-center overflow-hidden transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-110 group-hover:rotate-[-6deg]">
-          {tech.slug ? (
+          {tech.customIcon ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={tech.customIcon}
+              alt={tech.name}
+              className="w-9 h-9 object-contain transition-transform duration-500 group-hover:scale-110"
+              loading="lazy"
+            />
+          ) : tech.slug ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={`https://cdn.simpleicons.org/${tech.slug}/${tech.color}`}

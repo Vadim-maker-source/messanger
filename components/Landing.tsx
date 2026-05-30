@@ -738,9 +738,35 @@ function Footer() {
           <span className="font-semibold tracking-tight">talky</span>
           <span className="text-xs text-white/30 ml-3">© 2026 · made with 💜</span>
         </div>
-        <div className="flex items-center gap-5 text-sm text-white/50">
-          <a href="https://t.me/talky_obt" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">telegram</a>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">github</a>
+        <div className="flex items-center gap-3 text-sm text-white/50">
+          <a
+            href="https://t.me/talky_obt"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Telegram"
+            className="group relative w-12 h-12 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.08] hover:border-white/[0.15] transition-all"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://cdn.simpleicons.org/telegram/26A5E4"
+              alt=""
+              className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
+            />
+          </a>
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+            className="group relative w-12 h-12 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center hover:bg-white/[0.08] hover:border-white/[0.15] transition-all"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://cdn.simpleicons.org/github/ffffff"
+              alt=""
+              className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
+            />
+          </a>
         </div>
       </div>
     </footer>
