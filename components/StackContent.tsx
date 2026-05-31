@@ -157,7 +157,7 @@ export default function StackContent({ user }: { user?: SiteHeaderUser | null })
               <a
                 key={cat}
                 href={`#cat-${cat.toLowerCase().replace(/\s+/g, "-")}`}
-                className="cat-anchor inline-flex items-center px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-xs text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors"
+                className="cat-anchor inline-flex items-center px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-md text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors"
               >
                 {cat}
               </a>

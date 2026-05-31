@@ -29,7 +29,10 @@ interface Developer {
   about: string;
   experience: string;
   skills: string[];
+  /** Буква (или эмодзи) на цветном фоне — fallback если не задан avatarImage */
   avatar: string;
+  /** Путь к изображению аватара. Если задан — используется вместо буквы. */
+  avatarImage?: string;
   accent: string;
 }
 
@@ -48,6 +51,7 @@ const DEVELOPERS: Developer[] = [
       "Framer Motion", "GSAP", "Firebase", "Yandex Cloud", "Linux",
     ],
     avatar: "В",
+    avatarImage: "/images/logo.jpg",
     accent: "#A855F7",
   },
 ];
@@ -468,24 +472,29 @@ function Team({ onPick }: { onPick: (d: Developer) => void }) {
                   style={{ backgroundColor: d.accent }}
                 />
                 <div
-                  className="relative w-32 h-32 md:w-40 md:h-40 rounded-full grid place-items-center text-5xl md:text-7xl font-black border-4 transition-transform group-hover:scale-105"
+                  className="relative w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden grid place-items-center text-5xl md:text-7xl font-black border-4 transition-transform group-hover:scale-105"
                   style={{
-                    backgroundColor: d.accent,
+                    backgroundColor: d.avatarImage ? "transparent" : d.accent,
                     borderColor: "rgba(255,255,255,0.15)",
                     color: "#000",
                   }}
                 >
-                  {d.avatar}
+                  {d.avatarImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={d.avatarImage}
+                      alt={d.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : (
+                    d.avatar
+                  )}
                 </div>
               </div>
               <div className="mt-4 text-base font-medium">{d.name}</div>
               <div className="text-xs text-white/40 mt-0.5">{d.handle}</div>
             </button>
           ))}
-        </div>
-
-        <div className="mt-16 inline-flex items-center gap-2 text-xs text-white/35 uppercase tracking-[0.2em]">
-          ищем единомышленников · пиши в telegram
         </div>
       </div>
     </section>
@@ -532,14 +541,23 @@ function DeveloperPanel({ dev, onClose }: { dev: Developer | null; onClose: () =
                     style={{ backgroundColor: dev.accent }}
                   />
                   <div
-                    className="relative w-20 h-20 rounded-full grid place-items-center text-4xl font-black border-2"
+                    className="relative w-20 h-20 rounded-full overflow-hidden grid place-items-center text-4xl font-black border-2"
                     style={{
-                      backgroundColor: dev.accent,
+                      backgroundColor: dev.avatarImage ? "transparent" : dev.accent,
                       borderColor: "rgba(255,255,255,0.15)",
                       color: "#000",
                     }}
                   >
-                    {dev.avatar}
+                    {dev.avatarImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={dev.avatarImage}
+                        alt={dev.name}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      dev.avatar
+                    )}
                   </div>
                 </div>
                 <div>

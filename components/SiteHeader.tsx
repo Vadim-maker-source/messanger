@@ -27,7 +27,7 @@ export default function SiteHeader({ user, home = "/" }: Props) {
   const anchor = (h: string) => (home === "/" ? h : `${home}${h}`);
   return (
     <header className="fixed top-3 left-0 right-0 z-40 flex justify-center px-3">
-      <div className="backdrop-blur-2xl bg-white/[0.03] border border-white/[0.07] rounded-full shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] w-full max-w-3xl">
+      <div className="backdrop-blur-2xl bg-white/[0.03] border border-white/[0.07] rounded-full shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] w-full max-w-4xl">
         <div className="pl-5 pr-2 h-12 flex items-center justify-between gap-6">
           <Link href="/" className="flex items-center gap-2 shrink-0">
             <Image src="/images/icon.png" alt="Talky" width={28} height={28} className="rounded-full" />
