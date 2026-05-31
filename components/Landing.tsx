@@ -48,7 +48,7 @@ const DEVELOPERS: Developer[] = [
     skills: [
       "Next.js", "TypeScript", "Flutter", "Dart", "Prisma",
       "PostgreSQL", "Python", "WebRTC", "Pusher", "Socket.io", "Tailwind",
-      "Framer Motion", "GSAP", "Firebase", "Yandex Cloud", "Linux",
+      "Framer Motion", "GSAP", "Firebase", "Yandex Cloud", "Linux", "Github", "Linux", "Docker", "Nginx", "C++", "Python"
     ],
     avatar: "В",
     avatarImage: "/images/logo.jpg",

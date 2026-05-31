@@ -94,7 +94,12 @@ export async function POST(req: NextRequest) {
     // FCM: отправляем всем участникам кроме отправителя (с учётом настроек)
     const senderName = user.displayName || user.username;
     const msgText = fileUrl
-      ? (fileType === "IMAGE" ? "📷 Фото" : fileType === "VIDEO" ? "🎥 Видео" : fileType === "AUDIO" ? "🎤 Голосовое" : "📎 Файл")
+      ? (fileType === "IMAGE" ? "📷 Фото"
+        : fileType === "VIDEO" ? "🎥 Видео"
+        : fileType === "AUDIO" ? "🎤 Голосовое"
+        : fileType === "ROUND" ? "📹 Видеокружок"
+        : fileType === "STICKER" ? "💟 Стикер"
+        : "📎 Файл")
       : (String(content || "").trim() || "Сообщение");
 
     const chatTitle = (chat as any).name || senderName;

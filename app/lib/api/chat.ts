@@ -414,7 +414,7 @@ export async function getChatMessagesWithStatus(chatId: string) {
   return messagesWithStatus;
 }
 
-export type FileType = 'IMAGE' | 'VIDEO' | 'AUDIO' | 'ROUND' | 'FILE';
+export type FileType = 'IMAGE' | 'VIDEO' | 'AUDIO' | 'ROUND' | 'FILE' | 'STICKER';
 
 export async function getMessages(chatId: string) {
   const user = await getCurrentUser();
@@ -1276,7 +1276,12 @@ export async function sendMessage(
   if (chatWithUsers) {
     const senderName = user.displayName || user.username;
     const msgText = message.fileUrl
-      ? (message.fileType === "IMAGE" ? "📷 Фото" : message.fileType === "VIDEO" ? "🎥 Видео" : message.fileType === "AUDIO" ? "🎤 Голосовое" : "📎 Файл")
+      ? (message.fileType === "IMAGE" ? "📷 Фото"
+        : message.fileType === "VIDEO" ? "🎥 Видео"
+        : message.fileType === "AUDIO" ? "🎤 Голосовое"
+        : message.fileType === "ROUND" ? "📹 Видеокружок"
+        : message.fileType === "STICKER" ? "💟 Стикер"
+        : "📎 Файл")
       : (message.content || "Сообщение");
     const chatTitle = chatWithUsers.name || senderName;
 

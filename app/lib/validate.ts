@@ -48,7 +48,7 @@ export function asOptionalString(v: any, max: number): string | null | undefined
 const VALID_CHAT_TYPES: ChatType[] = ["PRIVATE", "GROUP", "CHANNEL"];
 const VALID_ACCESS: AccessType[] = ["PUBLIC", "LINK_ONLY", "PRIVATE"];
 const VALID_ROLES: ChatRole[] = ["CREATOR", "ADMIN", "MEMBER"];
-const VALID_FILE_TYPES = ["IMAGE", "VIDEO", "AUDIO", "FILE", "ROUND"] as const;
+const VALID_FILE_TYPES = ["IMAGE", "VIDEO", "AUDIO", "FILE", "ROUND", "STICKER"] as const;
 
 export function asChatType(v: any): ChatType | null {
   if (typeof v !== "string") return null;

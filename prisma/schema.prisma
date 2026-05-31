@@ -41,6 +41,10 @@ model User {
   // Инвайты, созданные пользователем
   createdInvites Invite[]  @relation("InviteCreator")
 
+  // Стикеры — паки, созданные пользователем + избранные
+  stickerPacks      StickerPack[]         @relation("StickerPackAuthor")
+  favoriteStickers  StickerPackFavorite[]
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
@@ -301,4 +305,56 @@ model Invite {
   @@index([chatId])
   @@index([serverId])
   @@index([createdBy])
+}
+
+
+// ─── Стикеры ─────────────────────────────────────────────────────────────────
+
+model StickerPack {
+  id          String   @id @default(cuid())
+  name        String              // "Котики на районе"
+  slug        String   @unique    // "cats-by-vadim-abc123"
+  description String?  @db.Text
+  coverUrl    String?             // обложка для grid'а паков
+  isPublic    Boolean  @default(true)
+
+  authorId    String
+  author      User     @relation("StickerPackAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  stickers    Sticker[]
+  favorites   StickerPackFavorite[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([isPublic])
+}
+
+model Sticker {
+  id        String   @id @default(cuid())
+  imageUrl  String              // PNG/WEBP с прозрачным фоном
+  alt       String?             // эмодзи-подсказка ("🐱"), max ~6 символов
+  position  Int      @default(0)
+
+  packId    String
+  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([packId])
+}
+
+model StickerPackFavorite {
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  packId    String
+  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime    @default(now())
+
+  @@id([userId, packId])
+  @@index([userId])
+  @@index([packId])
 }

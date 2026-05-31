@@ -75,28 +75,28 @@ export default function MessageContextMenu({
           onClick={() => { onReply(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Reply size={16} className="text-orange-400" />
+          <Reply size={16} className="text-white" />
           Ответить
         </button>
         <button
           onClick={() => { onForward(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Forward size={16} className="text-blue-400" />
+          <Forward size={16} className="text-white" />
           Переслать
         </button>
         <button
           onClick={() => { onReact(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Smile size={16} className="text-yellow-400" />
+          <Smile size={16} className="text-white" />
           Реакция
         </button>
         <button
           onClick={() => { onCopy(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Copy size={16} className="text-green-400" />
+          <Copy size={16} className="text-white" />
           Копировать текст
         </button>
         {isOwn && (
@@ -104,7 +104,7 @@ export default function MessageContextMenu({
             onClick={() => { onEdit(); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
           >
-            <Edit size={16} className="text-purple-400" />
+            <Edit size={16} className="text-white" />
             Редактировать
           </button>
         )}
@@ -122,7 +122,7 @@ export default function MessageContextMenu({
           onClick={() => { onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white/60"
         >
-          <Flag size={16} />
+          <Flag size={16} className="text-white/60" />
           Пожаловаться
         </button>
       </div>

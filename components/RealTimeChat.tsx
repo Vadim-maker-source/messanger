@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from "react";
 import Avatar from "@/components/Avatar";
 import { 
   Send, Paperclip, Mic, Video, Phone, X, Play, Pause, 
@@ -13,7 +13,10 @@ import {
   Brush,
   SendHorizonal,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  FileText, FileSpreadsheet, FileArchive, FileImage, FileVideo,
+  FileAudio, FileCode, FileType,
+  Sticker as StickerIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -45,6 +48,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 import LoaderCreative from "./loader";
 import ImageEditor from "./ImageEditor";
+import StickerPicker from "./StickerPicker";
+import StickerPackModal from "./StickerPackModal";
 
 type ChatRole = 'CREATOR' | 'ADMIN' | 'MEMBER';
 
@@ -132,6 +137,87 @@ const reactionsList = [
   { emoji: "😢", value: "sad", label: "Грусть" },
   { emoji: "😡", value: "angry", label: "Злость" },
 ];
+
+/**
+ * Рендерит emoji как <img> в стиле Apple через emojicdn.elk.sh.
+ * React.memo — чтобы один и тот же эмодзи в разных сообщениях
+ * не пересоздавал DOM-элемент при каждом рендере.
+ */
+const Emoji = React.memo(function Emoji({
+  symbol,
+  size = 20,
+  className = "",
+}: {
+  symbol: string;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`https://emojicdn.elk.sh/${encodeURIComponent(symbol)}?style=apple`}
+      alt={symbol}
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
+      className={`inline-block align-text-bottom select-none ${className}`}
+      draggable={false}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+});
+
+/**
+ * Регулярка для emoji — ловит большинство юникод-эмодзи, включая
+ * комбинированные (с модификаторами skin tone, ZWJ-семьи и т.д.).
+ */
+const EMOJI_REGEX = /\p{Extended_Pictographic}(?:\u{FE0F}|\p{Emoji_Modifier})?(?:\u{200D}\p{Extended_Pictographic}(?:\u{FE0F})?)*/gu;
+
+/**
+ * Кеш для renderEmojiText — один и тот же текст не парсится
+ * повторно. Ключ: `${size}:${text}`. Очищается если текстов накопилось много.
+ */
+const emojiCache = new Map<string, React.ReactNode[]>();
+const EMOJI_CACHE_LIMIT = 500;
+
+/**
+ * Парсит строку и заменяет каждый emoji на <Emoji> компонент.
+ * Если в строке нет emoji — возвращает оригинальный массив с одной строкой
+ * (избегаем создания React-нод на ровном месте).
+ */
+function renderEmojiText(text: string, size: number = 18): React.ReactNode[] {
+  if (!text) return [];
+  const cacheKey = `${size}:${text}`;
+  const cached = emojiCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Быстрый путь — нет emoji, не парсим
+  if (!EMOJI_REGEX.test(text)) {
+    EMOJI_REGEX.lastIndex = 0;
+    const result: React.ReactNode[] = [text];
+    if (emojiCache.size >= EMOJI_CACHE_LIMIT) emojiCache.clear();
+    emojiCache.set(cacheKey, result);
+    return result;
+  }
+  EMOJI_REGEX.lastIndex = 0;
+
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+
+  for (const match of text.matchAll(EMOJI_REGEX)) {
+    const idx = match.index!;
+    if (idx > lastIndex) parts.push(text.slice(lastIndex, idx));
+    parts.push(<Emoji key={`e${key++}`} symbol={match[0]} size={size} />);
+    lastIndex = idx + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+
+  if (emojiCache.size >= EMOJI_CACHE_LIMIT) emojiCache.clear();
+  emojiCache.set(cacheKey, parts);
+  return parts;
+}
 
 // Компонент для изображений
 const ImageMessage = ({ url }: { url: string }) => {
@@ -473,23 +559,31 @@ const RoundVideoMessage = ({ url }: { url: string }) => {
   };
 
   return (
-    <div 
-      className="relative w-40 h-40 rounded-full overflow-hidden cursor-pointer shadow-lg hover:scale-105 transition-transform duration-200"
+    <div
+      className="relative w-40 h-40 rounded-full overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-200"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={togglePlay}
     >
-      <video 
+      <video
         ref={videoRef}
         src={url}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover bg-transparent"
         loop
         muted={false}
         playsInline
       />
       {!isPlaying && (
-        <div className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          <Play className="w-8 h-8 text-white" />
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 ${
+            isHovered ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          {/* Лёгкая виньетка — без сплошного фона */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+          <div className="relative w-12 h-12 rounded-full bg-black/40 backdrop-blur-md grid place-items-center">
+            <Play className="w-5 h-5 text-white" fill="white" />
+          </div>
         </div>
       )}
     </div>
@@ -497,37 +591,89 @@ const RoundVideoMessage = ({ url }: { url: string }) => {
 };
 
 // Компонент для файлов
-// Компонент для файлов
-// Компонент для файлов - упрощенная версия
-// Компонент для файлов
-const FileMessage = ({ fileUrl, fileName }: { fileUrl: string; fileName?: string | null }) => {
-  const getFileIcon = () => {
-    const ext = fileName?.split('.').pop()?.toLowerCase();
-    if (['pdf'].includes(ext || '')) return "📄";
-    if (['doc', 'docx'].includes(ext || '')) return "📝";
-    if (['xls', 'xlsx'].includes(ext || '')) return "📊";
-    if (['zip', 'rar', '7z'].includes(ext || '')) return "📦";
-    return "📎";
-  };
-
+const FileMessage = ({
+  fileUrl,
+  fileName,
+  fileSize,
+}: {
+  fileUrl: string;
+  fileName?: string | null;
+  fileSize?: number | null;
+}) => {
+  const ext = (fileName?.split(".").pop() || "").toLowerCase();
+  const { Icon, color, label } = getFileMeta(ext);
   const displayName = fileName || "Файл";
+  const sizeText = fileSize ? formatBytes(fileSize) : null;
 
   return (
-    <a 
-      href={fileUrl} 
-      target="_blank" 
+    <a
+      href={fileUrl}
+      target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-3 bg-white/10 rounded-lg p-3 hover:bg-white/20 transition-colors group min-w-[200px]"
+      className="group flex items-center gap-3 bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3 pr-4 transition-colors min-w-[240px] max-w-[320px] border border-white/[0.08]"
     >
-      <div className="text-2xl">{getFileIcon()}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{displayName}</p>
-        <p className="text-xs text-white/40">Скачать файл</p>
+      {/* Иконка с фоновым цветом по типу */}
+      <div
+        className="relative w-12 h-12 rounded-xl grid place-items-center shrink-0 overflow-hidden"
+        style={{ backgroundColor: `${color}20`, color }}
+      >
+        <Icon className="w-6 h-6" strokeWidth={1.8} />
+        {/* Бейджик с расширением внизу */}
+        {ext && (
+          <span
+            className="absolute bottom-0 left-0 right-0 text-[8px] font-bold uppercase text-center py-0.5 tracking-wider text-white"
+            style={{ backgroundColor: color }}
+          >
+            {ext.length <= 4 ? ext : ext.slice(0, 4)}
+          </span>
+        )}
       </div>
-      <Download size={16} className="text-white/40 group-hover:text-white transition-colors" />
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-white truncate">{displayName}</p>
+        <p className="text-xs text-white/45 mt-0.5">
+          {label}
+          {sizeText ? ` · ${sizeText}` : ""}
+        </p>
+      </div>
+
+      <Download
+        size={18}
+        className="shrink-0 text-white/35 group-hover:text-white transition-colors"
+      />
     </a>
   );
 };
+
+// Метаданные иконки/цвета по расширению файла
+function getFileMeta(ext: string): {
+  Icon: typeof FileText;
+  color: string;
+  label: string;
+} {
+  if (["pdf"].includes(ext)) return { Icon: FileType, color: "#EF4444", label: "PDF документ" };
+  if (["doc", "docx", "odt", "rtf"].includes(ext)) return { Icon: FileText, color: "#3B82F6", label: "Документ" };
+  if (["xls", "xlsx", "csv", "ods"].includes(ext)) return { Icon: FileSpreadsheet, color: "#10B981", label: "Таблица" };
+  if (["ppt", "pptx", "odp"].includes(ext)) return { Icon: FileText, color: "#F97316", label: "Презентация" };
+  if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return { Icon: FileArchive, color: "#A855F7", label: "Архив" };
+  if (["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext))
+    return { Icon: FileImage, color: "#EC4899", label: "Изображение" };
+  if (["mp4", "mov", "avi", "mkv", "webm"].includes(ext))
+    return { Icon: FileVideo, color: "#F59E0B", label: "Видео" };
+  if (["mp3", "wav", "ogg", "flac", "m4a", "aac"].includes(ext))
+    return { Icon: FileAudio, color: "#06B6D4", label: "Аудио" };
+  if (["js", "ts", "tsx", "jsx", "html", "css", "json", "py", "java", "cpp", "c", "go", "rs", "php", "rb", "swift", "kt", "dart", "sql", "yml", "yaml", "xml"].includes(ext))
+    return { Icon: FileCode, color: "#22D3EE", label: "Код" };
+  if (["txt", "md"].includes(ext)) return { Icon: FileText, color: "#94A3B8", label: "Текст" };
+  return { Icon: File, color: "#94A3B8", label: "Файл" };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`;
+}
 
 // Компонент статуса прочтения
 const ReadStatusIndicator = ({ 
@@ -556,46 +702,25 @@ const ReadStatusIndicator = ({
   } else {
     // Для групповых чатов - показываем количество прочитавших
     const readersCount = readReceipts.length;
-    
+
     if (readersCount === 0) {
       return <Check size={16} className="text-white/40" />;
     }
-    
-    const readers = readReceipts
-      .map(receipt => {
-        const member = chatMembers.find(m => m.user.id === receipt.userId);
-        return member?.user.displayName || member?.user.username;
-      })
-      .filter(Boolean);
-    
+
+    // Подробности прочитавших открываются через контекстное меню → "Кто прочитал"
     return (
-      <div className="relative group">
-        <div className="flex items-center gap-0.5 cursor-help">
-          <Check size={10} className="text-blue-400" />
-          <span className="text-[8px] text-blue-400 ml-0.5">
-            {readersCount}
-          </span>
-        </div>
-        
-        {readers.length > 0 && (
-          <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block bg-[#1e1e22] border border-white/10 rounded-lg p-2 min-w-[150px] z-10 shadow-xl">
-            <p className="text-xs text-white/60 mb-1 border-b border-white/10 pb-1">Прочитали:</p>
-            <div className="max-h-[150px] overflow-y-auto">
-              {readers.map((name, idx) => (
-                <p key={idx} className="text-xs text-white truncate py-0.5">
-                  {name}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="flex items-center gap-0.5">
+        <CheckCheck size={16} className="text-white" />
+        <span className="text-[10px] text-white/70 ml-0.5 font-medium">
+          {readersCount}
+        </span>
       </div>
     );
   }
 };
 
 // Компонент контекстного меню
-const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy, onSelect }: any) => {
+const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy, onSelect, onReadStatus, chatType }: any) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -646,28 +771,28 @@ const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply,
           onClick={() => { onReply(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Reply size={16} className="text-orange-400" />
+          <Reply size={16} className="text-white" />
           Ответить
         </button>
         <button
           onClick={() => { onForward(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Forward size={16} className="text-blue-400" />
+          <Forward size={16} className="text-white" />
           Переслать
         </button>
         <button
           onClick={() => { onReact(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Smile size={16} className="text-yellow-400" />
+          <Smile size={16} className="text-white" />
           Реакция
         </button>
         <button
           onClick={() => { onCopy(); onClose(); }}
           className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
         >
-          <Copy size={16} className="text-green-400" />
+          <Copy size={16} className="text-white" />
           Копировать текст
         </button>
         {isOwn && (
@@ -675,8 +800,17 @@ const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply,
             onClick={() => { onEdit(); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
           >
-            <Edit size={16} className="text-purple-400" />
+            <Edit size={16} className="text-white" />
             Редактировать
+          </button>
+        )}
+        {isOwn && chatType !== "PRIVATE" && (message.readReceipts?.length ?? 0) > 0 && (
+          <button
+            onClick={() => { onReadStatus(); onClose(); }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
+          >
+            <CheckCheck size={16} className="text-white" />
+            Кто прочитал · {message.readReceipts.length}
           </button>
         )}
         {canDelete && (
@@ -695,7 +829,7 @@ const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply,
   }}
   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
 >
-  <Check size={16} className="text-violet-400" />
+  <Check size={16} className="text-white" />
   Выбрать
 </button>
       </div>
@@ -729,10 +863,10 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (reaction: string) =>
         <button
           key={reaction.value}
           onClick={() => onSelect(reaction.value)}
-          className="p-2 hover:bg-white/10 rounded-lg transition-colors text-2xl"
+          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           title={reaction.label}
         >
-          {reaction.emoji}
+          <Emoji symbol={reaction.emoji} size={36} />
         </button>
       ))}
     </motion.div>
@@ -931,7 +1065,29 @@ export default function RealTimeChat({
   partner
 }: RealTimeChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
+  // Отложенное значение для рендера — печать в инпут не будет блокироваться
+  // тяжёлым ре-рендером всего списка сообщений
+  const deferredMessages = useDeferredValue(messages);
+  // Дедупликация по id один раз, не каждый рендер
+  const uniqueMessages = useMemo(() => {
+    const seen = new Set<string>();
+    return deferredMessages.filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  }, [deferredMessages]);
+  // Текст инпута храним в ref, а не в state — это убирает ре-рендеры
+  // на каждое нажатие клавиши. В state держим только флаг "пустое/непустое",
+  // который меняется максимум один раз на переход.
+  const inputTextRef = useRef<string>("");
+  const [hasInputText, setHasInputText] = useState(false);
+  const setInputText = useCallback((text: string) => {
+    inputTextRef.current = text;
+    if (inputRef.current) inputRef.current.value = text;
+    const empty = !text.trim();
+    setHasInputText((prev) => (prev === !empty ? prev : !empty));
+  }, []);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
@@ -954,6 +1110,10 @@ export default function RealTimeChat({
   const [chatMembers, setChatMembers] = useState<ChatMember[]>(initialChatMembers || []);
   const [userRole, setUserRole] = useState<ChatRole | null>(initialUserRole || null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Message } | null>(null);
+  const [readStatusMessage, setReadStatusMessage] = useState<Message | null>(null);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const stickerBtnRef = useRef<HTMLButtonElement>(null);
+  const [viewingStickerUrl, setViewingStickerUrl] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [hasMarkedRead, setHasMarkedRead] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -1233,7 +1393,8 @@ export default function RealTimeChat({
   // Отправка сообщения
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!newMessage.trim() && !editingMessage) || isSending) return;
+    const currentText = inputTextRef.current;
+    if ((!currentText.trim() && !editingMessage) || isSending) return;
     if (isChannel && !canWrite) {
       alert("Только администратор может писать в канал");
       return;
@@ -1242,7 +1403,7 @@ export default function RealTimeChat({
     setIsSending(true);
     try {
       if (editingMessage) {
-        const updatedMessage = await editMessage(editingMessage.id, newMessage);
+        const updatedMessage = await editMessage(editingMessage.id, currentText);
         const formattedMessage = {
           ...updatedMessage,
           reactions: updatedMessage.reactions as { [key: string]: string[] } | null,
@@ -1250,9 +1411,9 @@ export default function RealTimeChat({
         } as Message;
         setMessages(prev => prev.map(msg => msg.id === formattedMessage.id ? formattedMessage : msg));
         setEditingMessage(null);
-        setNewMessage("");
+        setInputText("");
       } else {
-        const sentMessage = await sendMessage(chatId, newMessage.trim(), null, null, null, replyingTo?.id);
+        const sentMessage = await sendMessage(chatId, currentText.trim(), null, null, null, replyingTo?.id);
         const formattedMessage = {
           ...sentMessage,
           reactions: sentMessage.reactions as { [key: string]: string[] } | null,
@@ -1263,7 +1424,7 @@ export default function RealTimeChat({
           if (exists) return prev;
           return [...prev, formattedMessage];
         });
-        setNewMessage("");
+        setInputText("");
         setReplyingTo(null);
         setHasMarkedRead(false);
         requestAnimationFrame(() => {
@@ -1277,6 +1438,37 @@ export default function RealTimeChat({
       alert(error instanceof Error ? error.message : "Ошибка отправки");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // Отправка стикера в чат
+  const handleSendSticker = async (sticker: { imageUrl: string; alt: string | null; packName: string }) => {
+    if (isSending || iBlockedThem || theyBlockedMe) return;
+    if (isChannel && !canWrite) {
+      toast.error("Только администратор может писать в канал");
+      return;
+    }
+    setShowStickerPicker(false);
+    try {
+      const sentMessage = await sendMessage(
+        chatId,
+        sticker.alt || "",
+        sticker.imageUrl,
+        "STICKER",
+        sticker.packName,
+        replyingTo?.id
+      );
+      const formatted = {
+        ...sentMessage,
+        reactions: sentMessage.reactions as { [key: string]: string[] } | null,
+        readReceipts: [],
+      } as Message;
+      setMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
+      setReplyingTo(null);
+      await fetch("/api/sidebar/refresh", { method: "POST" });
+    } catch (error) {
+      console.error("Error sending sticker:", error);
+      toast.error(error instanceof Error ? error.message : "Ошибка отправки стикера");
     }
   };
 
@@ -1831,7 +2023,7 @@ const confirmDeleteMessage = async () => {
         onClick={(e) => { e.stopPropagation(); scrollToMessage(replyTo.id); }}
       >
         <p className="text-base font-bold text-violet-200 truncate mb-1">{replyToName}</p>
-        <p className="text-base text-white/70 truncate">{replyContent}</p>
+        <p className="text-base text-white/70 truncate">{renderEmojiText(replyContent, 20)}</p>
       </div>
     );
   };
@@ -1950,7 +2142,7 @@ const deleteSelectedMessages = async () => {
         return (
           <div>
             <ImageMessage url={message.fileUrl} />
-            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{message.content}</p>}
+            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{renderEmojiText(message.content, 28)}</p>}
           </div>
         );
       case 'VIDEO': 
@@ -1959,23 +2151,44 @@ const deleteSelectedMessages = async () => {
         return <AudioMessage url={message.fileUrl} />;
       case 'ROUND': 
         return <RoundVideoMessage url={message.fileUrl} />;
+      case 'STICKER':
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (message.fileUrl) setViewingStickerUrl(message.fileUrl);
+            }}
+            className="block hover:scale-[1.03] active:scale-95 transition-transform"
+            title="Посмотреть стикерпак"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={message.fileUrl}
+              alt={message.content || message.fileName || "стикер"}
+              className="w-40 h-40 md:w-48 md:h-48 object-contain select-none drop-shadow-md"
+              draggable={false}
+              loading="lazy"
+            />
+          </button>
+        );
       case 'FILE': 
         return (
           <div>
             <FileMessage fileUrl={message.fileUrl} fileName={message.fileName} />
-            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{message.content}</p>}
+            {message.content && <p className="text-lg wrap-break-word mt-1 px-4">{renderEmojiText(message.content, 28)}</p>}
           </div>
         );
       default:
         // Если файл есть, но тип не распознан — показываем только текст с отступами
         return message.content ? (
-          <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{message.content}</p>
+          <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{renderEmojiText(message.content, 26)}</p>
         ) : null;
     }
   }
   
   // Если только текст — добавляем отступы px-4 py-2
-  return <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{message.content}</p>;
+  return <p className="text-md wrap-break-word whitespace-pre-wrap px-4 py-2">{renderEmojiText(message.content, 26)}</p>;
 };
 
 // WebRTC: старт звонка — UI показываем мгновенно через custom event
@@ -2093,10 +2306,12 @@ const renderMessage = (message: Message) => {
       {isOwn && <div className="w-10 shrink-0" />}
       
       <div className={`max-w-[70%] relative ${isOwn ? 'order-2' : 'order-1'}`}>
-        <div className={`rounded-2xl shadow-lg ${
-          isOwn 
-            ? "bg-[#7166D8] text-white" 
-            : "bg-zinc-900/90 border-white/10 text-white"
+        <div className={`rounded-2xl ${
+          message.fileType === 'STICKER'
+            ? "bg-transparent shadow-none"
+            : isOwn
+              ? "bg-[#7166D8] text-white shadow-lg"
+              : "bg-zinc-900/90 border-white/10 text-white shadow-lg"
         } ${message.replyTo ? 'pt-2' : ''}`}>
           {/* Превью ответа внутри пузыря */}
           {renderReplyPreview(message)}
@@ -2169,7 +2384,7 @@ const renderMessage = (message: Message) => {
                         : "bg-white/8 hover:bg-white/15 text-white/70"
                     }`}
                   >
-                    <span>{emoji}</span>
+                    <Emoji symbol={emoji} size={24} />
                     {(users as string[]).length > 1 && <span className="font-semibold">{(users as string[]).length}</span>}
                   </button>
                 );
@@ -2984,9 +3199,7 @@ const handleUploadFilesWithCaption = async () => {
             </div>
           ) : (
             <AnimatePresence mode="popLayout">
-              {messages
-                .filter((msg, idx, arr) => arr.findIndex(m => m.id === msg.id) === idx)
-                .map((msg, idx, arr) => {
+              {uniqueMessages.map((msg, idx, arr) => {
                   const msgDate = new Date(msg.createdAt);
                   const prevDate = idx > 0 ? new Date(arr[idx - 1].createdAt) : null;
                   const isNewDay = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
@@ -3024,7 +3237,7 @@ const handleUploadFilesWithCaption = async () => {
                 <p className="text-xs text-violet-400 font-medium">Редактирование</p>
                 <p className="text-sm text-white/60 truncate">{editingMessage.content?.substring(0, 60)}</p>
               </div>
-              <button onClick={() => { setEditingMessage(null); setNewMessage(""); }} className="p-1 hover:bg-white/10 rounded-lg shrink-0">
+              <button onClick={() => { setEditingMessage(null); setInputText(""); }} className="p-1 hover:bg-white/10 rounded-lg shrink-0">
                 <X size={15} className="text-white/50" />
               </button>
             </motion.div>
@@ -3265,16 +3478,43 @@ const handleUploadFilesWithCaption = async () => {
             </AnimatePresence>
           </div>
 
+          {/* Кнопка стикеров — слева от поля ввода */}
+          <div className="relative">
+            <button
+              ref={stickerBtnRef}
+              type="button"
+              onClick={() => setShowStickerPicker((s) => !s)}
+              className={`p-3 rounded-full transition-colors duration-200 ${
+                showStickerPicker ? "bg-violet-500/20 text-violet-300" : "bg-white/5 hover:bg-white/10 text-white/60"
+              }`}
+              disabled={iBlockedThem || theyBlockedMe || (isChannel && !canWrite)}
+              title="Стикеры"
+            >
+              <StickerIcon size={28} />
+            </button>
+            <StickerPicker
+              open={showStickerPicker}
+              onClose={() => setShowStickerPicker(false)}
+              anchorRef={stickerBtnRef}
+              onSendSticker={handleSendSticker}
+            />
+          </div>
+
           <input 
             ref={inputRef}
             type="text" 
-            value={newMessage} 
-            onChange={(e) => setNewMessage(e.target.value)}
+            defaultValue=""
+            onChange={(e) => {
+              const v = e.target.value;
+              inputTextRef.current = v;
+              const empty = !v.trim();
+              setHasInputText((prev) => (prev === !empty ? prev : !empty));
+            }}
             placeholder={isRecording ? "Идет запись..." : pendingAudioBlob ? "Отправьте или удалите запись..." : (editingMessage ? "Редактирование..." : (replyingTo ? "Ответ..." : "Введите сообщение..."))}
             disabled={isSending || isRecording || !!pendingAudioBlob || iBlockedThem || theyBlockedMe} 
             className="flex-1 bg-white/5 rounded-full px-6 py-4 text-white outline-none focus:ring-1 focus:ring-[#7166D8] disabled:opacity-50 duration-200" 
           />
-          
+
           <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'IMAGE')} />
           <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={(e) => handleFileSelect(e, 'VIDEO')} />
           <input ref={fileInputRef2} type="file" className="hidden" onChange={(e) => handleFileSelect(e, 'FILE')} />
@@ -3287,7 +3527,7 @@ const handleUploadFilesWithCaption = async () => {
       {canWrite && (
       <button 
         type="submit" 
-        disabled={(!newMessage.trim() && !editingMessage) || isSending || (isChannel && !canWrite) || iBlockedThem || theyBlockedMe}
+        disabled={(!hasInputText && !editingMessage) || isSending || (isChannel && !canWrite) || iBlockedThem || theyBlockedMe}
         className="bg-[#7166D8] text-black p-3.5 rounded-full hover:bg-[#7166D8]/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSending ? (
@@ -3359,8 +3599,13 @@ const handleUploadFilesWithCaption = async () => {
     message={contextMenu.message}
     isOwn={contextMenu.message.userId === currentUser.id}
     canDelete={contextMenu.message.userId === currentUser.id || userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin}
+    chatType={chatType}
     onClose={() => setContextMenu(null)}
     onSelect={() => enterSelectionMode(contextMenu.message.id)}
+    onReadStatus={() => {
+      setReadStatusMessage(contextMenu.message);
+      setContextMenu(null);
+    }}
     onReply={() => {
       setReplyingTo(contextMenu.message);
       setContextMenu(null);
@@ -3375,7 +3620,7 @@ const handleUploadFilesWithCaption = async () => {
     }}
     onEdit={() => {
       setEditingMessage(contextMenu.message);
-      setNewMessage(contextMenu.message.content);
+      setInputText(contextMenu.message.content);
       setContextMenu(null);
       inputRef.current?.focus();
     }}
@@ -3393,6 +3638,82 @@ const handleUploadFilesWithCaption = async () => {
     }}
   />
 )}
+
+{/* Модалка просмотра стикерпака — открывается при клике на стикер в чате */}
+<StickerPackModal
+  open={!!viewingStickerUrl}
+  onClose={() => setViewingStickerUrl(null)}
+  stickerUrl={viewingStickerUrl}
+  currentUserId={currentUser.id}
+/>
+
+{/* Модалка «Кто прочитал» */}
+<Dialog open={!!readStatusMessage} onOpenChange={(o) => !o && setReadStatusMessage(null)}>
+  <DialogContent className="bg-[#121214] text-white w-full max-w-md">
+    <DialogHeader>
+      <DialogTitle className="text-white font-semibold text-lg flex items-center gap-2">
+        <CheckCheck size={18} className="text-white" />
+        Кто прочитал
+      </DialogTitle>
+    </DialogHeader>
+    {readStatusMessage && (() => {
+      const receipts = readStatusMessage.readReceipts || [];
+      if (receipts.length === 0) {
+        return <p className="text-sm text-white/55 mt-2">Сообщение пока никто не прочитал</p>;
+      }
+      const readers = receipts
+        .map(r => {
+          const member = chatMembers.find(m => m.user.id === r.userId);
+          if (!member) return null;
+          return {
+            id: member.user.id,
+            name: member.user.displayName || member.user.username,
+            username: member.user.username,
+            avatarUrl: member.user.avatarUrl,
+            readAt: r.readAt,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => !!x);
+
+      return (
+        <>
+          <p className="text-xs text-white/45 mb-3">
+            прочитали: {readers.length}
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto -mx-2">
+            {readers.map(reader => (
+              <div
+                key={reader.id}
+                className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-white/[0.04] transition-colors"
+              >
+                <Avatar
+                  image={reader.avatarUrl}
+                  title={reader.name}
+                  size={40}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white truncate">{reader.name}</div>
+                  {reader.username && (
+                    <div className="text-xs text-white/45 truncate">@{reader.username}</div>
+                  )}
+                </div>
+                {reader.readAt && (
+                  <div className="text-xs text-white/35 shrink-0">
+                    {new Date(reader.readAt).toLocaleTimeString("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      );
+    })()}
+  </DialogContent>
+</Dialog>
+
 <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
   <DialogContent className="bg-[#121214] text-white w-full max-w-md sm:max-w-lg md:max-w-xl">
     <DialogHeader>
