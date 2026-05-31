@@ -5,6 +5,10 @@ import { unauthorized, badRequest, errorResponse } from "@/app/lib/validate";
 import { checkRateLimit, rateLimited } from "@/app/lib/rate-limit";
 import { NextResponse } from "next/server";
 
+// До 200 МБ файлы — даём 5 минут на загрузку с медленной сети
+export const maxDuration = 300;
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getMobileUserFromRequest(req);

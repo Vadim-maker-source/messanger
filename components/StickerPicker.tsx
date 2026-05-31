@@ -11,6 +11,7 @@ import {
   Heart,
   Globe,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -294,6 +295,11 @@ function PacksView({
               if (activePackId) await openPack(activePackId);
               await load();
             }}
+            onPackDeleted={async () => {
+              setActivePackId(null);
+              setActivePack(null);
+              await load();
+            }}
           />
         ) : (
           <div className="flex-1 grid place-items-center text-sm text-white/40">
@@ -349,10 +355,12 @@ function ActivePackContent({
   pack,
   onSend,
   onChanged,
+  onPackDeleted,
 }: {
   pack: PackDetails;
   onSend: (s: StickerPreview) => void;
   onChanged: () => void | Promise<void>;
+  onPackDeleted: () => void | Promise<void>;
 }) {
   const [me, setMe] = useState<string | null>(null);
   useEffect(() => {
@@ -401,6 +409,22 @@ function ActivePackContent({
     }
   };
 
+  const handleDeletePack = async () => {
+    if (!confirm(`Удалить стикерпак «${pack.name}»? Все ${pack._count.stickers} стикеров будут удалены безвозвратно.`)) return;
+    try {
+      const res = await fetch(`/api/stickers/packs/${pack.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Не удалось удалить пак");
+        return;
+      }
+      toast.success("Пак удалён");
+      await onPackDeleted();
+    } catch {
+      toast.error("Не удалось удалить пак");
+    }
+  };
+
   return (
     <>
       {/* Шапка с инфой о паке */}
@@ -412,12 +436,20 @@ function ActivePackContent({
           </div>
         </div>
         {isOwner && (
-          <>
+          <div className="shrink-0 flex items-center gap-2">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-xs font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-xs font-medium transition-colors"
+              title="Добавить стикер"
             >
               <Plus size={13} /> Добавить
+            </button>
+            <button
+              onClick={handleDeletePack}
+              className="w-8 h-8 grid place-items-center rounded-lg bg-white/[0.04] hover:bg-red-500/15 text-white/55 hover:text-red-400 transition-colors"
+              title="Удалить пак"
+            >
+              <Trash2 size={14} />
             </button>
             <input
               ref={fileInputRef}
@@ -427,7 +459,7 @@ function ActivePackContent({
               className="hidden"
               onChange={handleUpload}
             />
-          </>
+          </div>
         )}
       </div>
 

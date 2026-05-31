@@ -5,7 +5,7 @@ import { randomBytes } from "crypto";
 
 // ─── Конфигурация безопасности ──────────────────────────────────────────────
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 МБ — с запасом для видео
+const MAX_FILE_SIZE = 1000 * 1024 * 1024; // 1000 МБ — для длинных HD-видео
 
 // Whitelist MIME-типов. Всё остальное отвергается.
 // Не разрешаем: text/html, image/svg+xml (XSS), application/x-* (исполняемые)
