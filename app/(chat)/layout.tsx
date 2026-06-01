@@ -62,6 +62,11 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         fetchData();
     }, [loadSidebarData]);
 
+    // Регистрируем web-сессию в БД (для отображения в "Устройства" с мобилы)
+    useEffect(() => {
+        fetch("/api/auth/sessions/touch", { method: "POST" }).catch(() => {});
+    }, []);
+
     useEffect(() => {
         if (!user?.id) return;
 

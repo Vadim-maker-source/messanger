@@ -159,8 +159,16 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
-    try { await signOut(); router.push("/sign-in"); }
-    catch {} finally { setIsLoggingOut(false); setShowUserMenu(false); }
+    try {
+      // Сначала удаляем запись Session — пока кука ещё валидна
+      await fetch("/api/auth/sessions/forget", { method: "POST" }).catch(() => {});
+      await signOut();
+      router.push("/sign-in");
+    } catch {
+    } finally {
+      setIsLoggingOut(false);
+      setShowUserMenu(false);
+    }
   };
 
   const startResizing = (e: React.MouseEvent) => { e.preventDefault(); setIsResizing(true); };
