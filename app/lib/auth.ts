@@ -86,7 +86,43 @@ export const authOptions: NextAuthOptions = {
           username: user.username,
         };
       }
-    })
+    }),
+    // ── QR-провайдер: вход без пароля по подтверждённому QR-токену ────
+    CredentialsProvider({
+      id: "qr",
+      name: "qr",
+      credentials: {
+        token: { label: "QR Token", type: "text" },
+      },
+      async authorize(credentials) {
+        const token = credentials?.token;
+        if (!token) throw new Error("Нет токена");
+
+        const attempt = await prisma.qrLoginAttempt.findUnique({
+          where: { token },
+        });
+
+        if (!attempt) throw new Error("QR-код не найден");
+        if (attempt.status !== "APPROVED") throw new Error("QR-код не подтверждён");
+        if (!attempt.userId) throw new Error("Нет пользователя");
+        if (attempt.expiresAt < new Date()) throw new Error("QR-код просрочен");
+
+        const user = await prisma.user.findUnique({
+          where: { id: attempt.userId },
+        });
+        if (!user) throw new Error("Пользователь не найден");
+
+        // Помечаем токен как использованный — нельзя залогиниться второй раз
+        await prisma.qrLoginAttempt.delete({ where: { token } });
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.displayName,
+          username: user.username,
+        };
+      },
+    }),
   ],
   callbacks: {
     async jwt({ token, user }) {

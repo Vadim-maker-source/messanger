@@ -42,7 +42,7 @@ const MOBILE_PUBLIC = [
 ];
 
 // На Vercel-домене разрешены ТОЛЬКО эти страницы и API
-const VERCEL_ALLOWED_PAGES = ["/", "/sign-in", "/sign-up", "/welcome", "/stack"];
+const VERCEL_ALLOWED_PAGES = ["/", "/sign-in", "/sign-in/qr", "/sign-up", "/welcome", "/stack"];
 const VERCEL_ALLOWED_API_PREFIXES = [
   "/api/auth",        // login, register, reset-password, send-2fa, verify, change-password, NextAuth
   "/api/early-access",
