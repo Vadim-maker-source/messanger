@@ -3,91 +3,93 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  username       String    @unique
-  phoneNumber    String?   @unique
+  id             String   @id @default(uuid(7))
+  email          String   @unique
+  username       String   @unique
+  phoneNumber    String?  @unique
   hashedPassword String?
   displayName    String
   avatarUrl      String?
-  bio            String?   @db.Text
+  bio            String?  @db.Text
   status         String?
-  lastSeen       DateTime  @default(now())
-  
+  lastSeen       DateTime @default(now())
+
   // Статус онлайн
-  isOnline       Boolean   @default(false)
-  lastActive     DateTime  @default(now())
-  
+  isOnline   Boolean  @default(false)
+  lastActive DateTime @default(now())
+
   // FCM push token для мобильных уведомлений
-  fcmToken       String?
-  
-  settings       UserSettings?
+  fcmToken String?
+
+  settings UserSettings?
 
   // Отношения
-  chats          Chat[]    @relation("UserChats")
-  messages       Message[]
-  chatMembers    ChatMember[]
-  readReceipts   ReadReceipt[]
-  callsCreated   Call[]    @relation("CallsCreated")
-  
-  ownedServers   Server[]  @relation("ServerOwner")
-  memberServers  Server[]  @relation("ServerMembers")
-  
+  chats        Chat[]        @relation("UserChats")
+  messages     Message[]
+  chatMembers  ChatMember[]
+  readReceipts ReadReceipt[]
+  callsCreated Call[]        @relation("CallsCreated")
+
+  ownedServers  Server[] @relation("ServerOwner")
+  memberServers Server[] @relation("ServerMembers")
+
   // Инвайты, созданные пользователем
-  createdInvites Invite[]  @relation("InviteCreator")
+  createdInvites Invite[] @relation("InviteCreator")
 
   // Стикеры — паки, созданные пользователем + избранные
-  stickerPacks      StickerPack[]         @relation("StickerPackAuthor")
-  favoriteStickers  StickerPackFavorite[]
+  stickerPacks     StickerPack[]         @relation("StickerPackAuthor")
+  favoriteStickers StickerPackFavorite[]
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Для сортировки/фильтрации онлайн-листов и ускорения фоновых задач
+  @@index([isOnline, lastActive])
+  @@index([lastSeen])
 }
 
 model UserSettings {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  
+  id     String @id @default(uuid(7))
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
   // 🔐 Приватность
-  showOnlineStatus    Boolean  @default(true)
-  showLastSeen        Boolean  @default(true)
-  allowDirectMessages String   @default("everyone") // "everyone" | "contacts" | "nobody"
-  allowAddToChats     String   @default("everyone")
-  profileVisibility   String   @default("public")   // "public" | "contacts" | "private"
-  
+  showOnlineStatus    Boolean @default(true)
+  showLastSeen        Boolean @default(true)
+  allowDirectMessages String  @default("everyone") // "everyone" | "contacts" | "nobody"
+  allowAddToChats     String  @default("everyone")
+  profileVisibility   String  @default("public") // "public" | "contacts" | "private"
+
   // 🎨 Внешний вид
-  theme               String   @default("system")   // "light" | "dark" | "system"
-  chatTheme           String?
-  messageFontSize     String   @default("medium")   // "small" | "medium" | "large"
-  accentColor         String?
-  chatBackground      String?
-  
+  theme           String  @default("system") // "light" | "dark" | "system"
+  chatTheme       String?
+  messageFontSize String  @default("medium") // "small" | "medium" | "large"
+  accentColor     String?
+  chatBackground  String?
+
   // 🔔 Уведомления
-  pushNotifications   Boolean  @default(true)
-  soundNotifications  Boolean  @default(true)
-  vibration           Boolean  @default(true)
-  showNotificationPreview Boolean @default(true)
-  mutedChats          String[]
-  
+  pushNotifications       Boolean  @default(true)
+  soundNotifications      Boolean  @default(true)
+  vibration               Boolean  @default(true)
+  showNotificationPreview Boolean  @default(true)
+  mutedChats              String[]
+
   // 💬 Поведение чата
-  sendReadReceipts    Boolean  @default(true)
-  showTypingIndicator Boolean  @default(true)
-  autoDownloadMedia   String   @default("wifi")     // "always" | "wifi" | "never"
-  compressImages      Boolean  @default(true)
-  
+  sendReadReceipts    Boolean @default(true)
+  showTypingIndicator Boolean @default(true)
+  autoDownloadMedia   String  @default("wifi") // "always" | "wifi" | "never"
+  compressImages      Boolean @default(true)
+
   // ⚙️ Гибкие предпочтения
-  preferences         Json?
-  
+  preferences Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  @@index([userId])
 }
 
 enum ChatType {
@@ -97,9 +99,9 @@ enum ChatType {
 }
 
 enum AccessType {
-  PUBLIC    
-  LINK_ONLY 
-  PRIVATE   
+  PUBLIC
+  LINK_ONLY
+  PRIVATE
 }
 
 enum ChatRole {
@@ -122,68 +124,75 @@ enum CallStatus {
 }
 
 model Server {
-  id          String     @id @default(cuid())
-  name        String
-  imageUrl    String?
-  inviteCode  String     @unique @default(uuid())
-  access      AccessType @default(PUBLIC)
-  
-  ownerId     String
-  owner       User       @relation("ServerOwner", fields: [ownerId], references: [id])
-  
-  chats       Chat[]
-  members     User[]     @relation("ServerMembers")
-  
-  // Инвайты для сервера (теперь связь правильная)
-  invites     Invite[]   @relation("ServerInvites")
+  id         String     @id @default(uuid(7))
+  name       String
+  imageUrl   String?
+  inviteCode String     @unique @default(uuid(7))
+  access     AccessType @default(PUBLIC)
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  ownerId String
+  owner   User   @relation("ServerOwner", fields: [ownerId], references: [id])
+
+  chats   Chat[]
+  members User[] @relation("ServerMembers")
+
+  // Инвайты для сервера (теперь связь правильная)
+  invites Invite[] @relation("ServerInvites")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
 }
 
 model Chat {
-  id          String     @id @default(cuid())
-  name        String?
-  imageUrl    String?
-  type        ChatType
-  access      AccessType @default(PUBLIC)
-  inviteCode  String?    @unique @default(uuid())
+  id         String     @id @default(uuid(7))
+  name       String?
+  imageUrl   String?
+  type       ChatType
+  access     AccessType @default(PUBLIC)
+  inviteCode String?    @unique @default(uuid(7))
 
-  serverId    String?
-  server      Server?    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId String?
+  server   Server? @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
-  users       User[]     @relation("UserChats")
-  members     ChatMember[]
-  messages    Message[]
+  users        User[]        @relation("UserChats")
+  members      ChatMember[]
+  messages     Message[]
   readReceipts ReadReceipt[]
-  calls       Call[]
-  
-  // Инвайты для чата
-  invites     Invite[]   @relation("ChatInvites")
+  calls        Call[]
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt @default(now())
+  // Инвайты для чата
+  invites Invite[] @relation("ChatInvites")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  // Все чаты сервера / списки последних чатов
+  @@index([serverId])
+  @@index([type])
+  @@index([updatedAt])
 }
 
 model Call {
-  id           String     @id @default(cuid())
-  chatId       String
-  chat         Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid(7))
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
-  createdById  String
-  createdBy    User       @relation("CallsCreated", fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User   @relation("CallsCreated", fields: [createdById], references: [id], onDelete: Cascade)
 
-  type         CallType
-  status       CallStatus @default(RINGING)
+  type   CallType
+  status CallStatus @default(RINGING)
 
   // Stream Call identifier (e.g. "messanger:call_...")
-  streamCallId String     @unique
+  streamCallId String @unique
 
   // SDP offer for WebRTC (хранится, чтобы получатель мог получить его при опоздании)
-  offerSdp    String?
+  offerSdp String?
 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([chatId])
   @@index([createdById])
@@ -191,26 +200,28 @@ model Call {
 }
 
 model ChatMember {
-  id        String   @id @default(cuid())
-  role      ChatRole @default(MEMBER)
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  chatId    String
-  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  
+  id   String   @id @default(uuid(7))
+  role ChatRole @default(MEMBER)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([userId, chatId])
+  // Composite unique покрывает запрос по userId, но НЕ по chatId
+  @@index([chatId])
 }
 
 model Block {
-  id          String   @id @default(cuid())
-  blockerId   String
-  blockedId   String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid(7))
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
 
   @@unique([blockerId, blockedId])
   @@index([blockerId])
@@ -218,28 +229,29 @@ model Block {
 }
 
 model ChatUserPreference {
-  id         String   @id @default(cuid())
+  id         String    @id @default(uuid(7))
   userId     String
   chatId     String
-  isPinned   Boolean  @default(false)
-  isArchived Boolean  @default(false)
-  isMuted    Boolean  @default(false)
+  isPinned   Boolean   @default(false)
+  isArchived Boolean   @default(false)
+  isMuted    Boolean   @default(false)
   pinnedAt   DateTime?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, chatId])
   @@index([userId])
+  @@index([chatId])
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  content   String   @db.Text
-  fileUrl   String?
-  fileName  String?
-  fileType  String?
-  reactions Json?
+  id                     String    @id @default(uuid(7))
+  content                String    @db.Text
+  fileUrl                String?
+  fileName               String?
+  fileType               String?
+  reactions              Json?
   forwardedFromMessageId String?
   forwardedFromChatId    String?
   forwardedFromChatName  String?
@@ -247,25 +259,32 @@ model Message {
   forwardedFromUserId    String?
   forwardedFromUserName  String?
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  chatId    String
-  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
-  replyToId   String?
-  replyTo     Message? @relation("MessageReply", fields: [replyToId], references: [id])
-  replies     Message[] @relation("MessageReply")
+  replyToId String?
+  replyTo   Message?  @relation("MessageReply", fields: [replyToId], references: [id])
+  replies   Message[] @relation("MessageReply")
 
   readReceipts ReadReceipt[]
 
   deleted   Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Главный индекс — пагинация сообщений в чате (ORDER BY createdAt)
+  @@index([chatId, createdAt])
+  // Поиск/фильтрация сообщений конкретного юзера
+  @@index([userId])
+  // Reverse-lookup для replies (кто на это сообщение ответил)
+  @@index([replyToId])
 }
 
 model ReadReceipt {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid(7))
   messageId String
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   userId    String
@@ -281,64 +300,65 @@ model ReadReceipt {
 
 // 🆕 Модель для инвайтов/приглашений
 model Invite {
-  id          String     @id @default(cuid())
-  code        String     @unique
-  chatId      String?
-  chat        Chat?      @relation("ChatInvites", fields: [chatId], references: [id], onDelete: Cascade)
-  
-  serverId    String?
-  server      Server?    @relation("ServerInvites", fields: [serverId], references: [id], onDelete: Cascade)
-  
-  createdBy   String
-  creator     User       @relation("InviteCreator", fields: [createdBy], references: [id])
-  
-  maxUses     Int?       // Максимальное количество использований (null = безлимит)
-  uses        Int        @default(0) // Текущее количество использований
-  expiresAt   DateTime?  // Дата истечения (null = никогда)
-  
-  isActive    Boolean    @default(true) // Активен ли инвайт
-  
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id     String  @id @default(uuid(7))
+  code   String  @unique
+  chatId String?
+  chat   Chat?   @relation("ChatInvites", fields: [chatId], references: [id], onDelete: Cascade)
 
-  @@index([code])
+  serverId String?
+  server   Server? @relation("ServerInvites", fields: [serverId], references: [id], onDelete: Cascade)
+
+  createdBy String
+  creator   User   @relation("InviteCreator", fields: [createdBy], references: [id])
+
+  maxUses   Int? // Максимальное количество использований (null = безлимит)
+  uses      Int       @default(0) // Текущее количество использований
+  expiresAt DateTime? // Дата истечения (null = никогда)
+
+  isActive Boolean @default(true) // Активен ли инвайт
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // code уже @unique — индекс не нужен
   @@index([chatId])
   @@index([serverId])
   @@index([createdBy])
+  // Для очистки протухших инвайтов
+  @@index([expiresAt])
 }
-
 
 // ─── Стикеры ─────────────────────────────────────────────────────────────────
 
 model StickerPack {
-  id          String   @id @default(cuid())
-  name        String              // "Котики на районе"
-  slug        String   @unique    // "cats-by-vadim-abc123"
-  description String?  @db.Text
-  coverUrl    String?             // обложка для grid'а паков
-  isPublic    Boolean  @default(true)
+  id          String  @id @default(uuid(7))
+  name        String // "Котики на районе"
+  slug        String  @unique // "cats-by-vadim-abc123"
+  description String? @db.Text
+  coverUrl    String? // обложка для grid'а паков
+  isPublic    Boolean @default(true)
 
-  authorId    String
-  author      User     @relation("StickerPackAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation("StickerPackAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
-  stickers    Sticker[]
-  favorites   StickerPackFavorite[]
+  stickers  Sticker[]
+  favorites StickerPackFavorite[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([authorId])
   @@index([isPublic])
 }
 
 model Sticker {
-  id        String   @id @default(cuid())
-  imageUrl  String              // PNG/WEBP с прозрачным фоном
-  alt       String?             // эмодзи-подсказка ("🐱"), max ~6 символов
-  position  Int      @default(0)
+  id       String  @id @default(uuid(7))
+  imageUrl String // PNG/WEBP с прозрачным фоном
+  alt      String? // эмодзи-подсказка ("🐱"), max ~6 символов
+  position Int     @default(0)
 
-  packId    String
-  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId String
+  pack   StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -346,13 +366,13 @@ model Sticker {
 }
 
 model StickerPackFavorite {
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  packId    String
-  pack      StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId String
+  pack   StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime    @default(now())
+  createdAt DateTime @default(now())
 
   @@id([userId, packId])
   @@index([userId])
