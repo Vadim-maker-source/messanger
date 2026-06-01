@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { prisma } from "./prisma";
 import { Adapter } from "next-auth/adapters";
 
@@ -129,6 +130,11 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.username = (user as any).username;
+        // Уникальный идентификатор этой сессии — храним в JWT.
+        // Используется чтобы привязать НА КАЖДУЮ выпущенную куку
+        // отдельную запись в таблице Session. Удаление этой записи
+        // даёт возможность дистанционно завершить сессию на конкретном устройстве.
+        token.sid = randomBytes(16).toString("hex");
       }
       return token;
     },
@@ -136,6 +142,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.username = token.username as string;
+        (session as any).sid = token.sid as string;
       }
       return session;
     }

@@ -63,9 +63,64 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
     }, [loadSidebarData]);
 
     // Регистрируем web-сессию в БД (для отображения в "Устройства" с мобилы)
+    // и подписываемся на событие session-revoked в реальном времени.
     useEffect(() => {
-        fetch("/api/auth/sessions/touch", { method: "POST" }).catch(() => {});
+        let cancelled = false;
+        let myTokenHash: string | null = null;
+
+        // Один touch при монтировании — создаст запись Session, вернёт tokenHash
+        (async () => {
+            try {
+                const res = await fetch("/api/auth/sessions/touch", { method: "POST" });
+                if (cancelled) return;
+                if (res.status === 401) {
+                    const { signOut } = await import("next-auth/react");
+                    await signOut({ redirect: false });
+                    window.location.href = "/sign-in";
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                if (data?.tokenHash) myTokenHash = data.tokenHash;
+            } catch {
+                /* ignore */
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
+
+    // Real-time отзыв через socket: при получении session-revoked
+    // сравниваем tokenHash — если совпал, эта вкладка должна вылогиниться.
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const channel = pusherClient.subscribe(`user-${user.id}`);
+
+        const handleRevoke = async (data: { tokenHash?: string }) => {
+            try {
+                // Узнаём свой tokenHash через touch (он в response)
+                const res = await fetch("/api/auth/sessions/touch", { method: "POST" });
+                const myData = await res.json().catch(() => ({}));
+                const myHash = myData?.tokenHash;
+                // Если 401 — мы уже отозваны, тоже выходим
+                if (res.status === 401 || (myHash && myHash === data?.tokenHash)) {
+                    const { signOut } = await import("next-auth/react");
+                    await signOut({ redirect: false });
+                    window.location.href = "/sign-in";
+                }
+            } catch {
+                /* ignore */
+            }
+        };
+
+        channel.bind("session-revoked", handleRevoke);
+
+        return () => {
+            channel.unbind("session-revoked", handleRevoke);
+        };
+    }, [user?.id]);
 
     useEffect(() => {
         if (!user?.id) return;

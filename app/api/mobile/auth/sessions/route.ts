@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
     where: {
       userId: user.id,
       expiresAt: { gt: new Date() },
+      revokedAt: null,
     },
     orderBy: { lastActiveAt: "desc" },
     select: {

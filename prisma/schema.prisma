@@ -404,6 +404,11 @@ model Session {
   createdAt    DateTime @default(now())
   expiresAt    DateTime // через 30 дней по умолчанию
 
+  // Soft-delete: если revokedAt != null — сессия отозвана с другого
+  // устройства. Запись остаётся до expiresAt чтобы touch-запросы
+  // от отозванной куки получали 401 и клиент делал signOut.
+  revokedAt DateTime?
+
   @@index([userId])
   @@index([expiresAt])
 }
