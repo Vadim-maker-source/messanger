@@ -48,6 +48,9 @@ model User {
   // Активные сессии (устройства, авторизованные через пароль или QR)
   sessions Session[]
 
+  // Сообщения, добавленные в избранное
+  favoriteMessages FavoriteMessage[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -99,6 +102,8 @@ enum ChatType {
   PRIVATE
   GROUP
   CHANNEL
+  NOTIFICATIONS // псевдо-чат "Уведомления" (один на юзера, только система пишет)
+  FAVORITES // псевдо-чат "Избранное" (один на юзера, ссылки на сохранённые сообщения)
 }
 
 enum AccessType {
@@ -274,6 +279,13 @@ model Message {
 
   readReceipts ReadReceipt[]
 
+  // Кто-нибудь добавил это сообщение в избранное
+  favorites FavoriteMessage[]
+
+  // Системное сообщение ("X добавил Y", "Чат создан") — стилизуется
+  // отдельно: серая плашка по центру без bubble и аватарки.
+  isSystem Boolean @default(false)
+
   deleted   Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -448,4 +460,23 @@ model QrLoginAttempt {
   @@index([token])
   @@index([status])
   @@index([expiresAt])
+}
+
+// ─── Избранные сообщения ────────────────────────────────────────────────────
+
+/// Связь "пользователь добавил сообщение в избранное".
+/// Использует composite primary key вместо отдельного id — чтобы не было
+/// дубликатов и unique-индекс работал автоматически.
+model FavoriteMessage {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, messageId])
+  @@index([userId])
+  @@index([messageId])
 }

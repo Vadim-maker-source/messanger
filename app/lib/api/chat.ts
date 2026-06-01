@@ -157,6 +157,15 @@ export async function getUserSidebarData() {
 
   console.log("Loading sidebar data for user:", currentUser.id);
 
+  // Гарантируем что у юзера есть псевдо-чаты NOTIFICATIONS и FAVORITES
+  try {
+    const { ensureNotificationsChat, ensureFavoritesChat } = await import("@/app/lib/system-messages");
+    await ensureNotificationsChat(currentUser.id);
+    await ensureFavoritesChat(currentUser.id);
+  } catch (e) {
+    console.error("[sidebar] ensure special chats failed:", e);
+  }
+
   // Получаем ВСЕ чаты пользователя (и PRIVATE, и GROUP, и CHANNEL), которые не на сервере
   const allChats = await prisma.chat.findMany({
     where: {
@@ -418,7 +427,88 @@ export type FileType = 'IMAGE' | 'VIDEO' | 'AUDIO' | 'ROUND' | 'FILE' | 'STICKER
 
 export async function getMessages(chatId: string) {
   const user = await getCurrentUser();
-  
+
+  // Если это псевдо-чат FAVORITES — возвращаем избранные сообщения юзера
+  // (а не сообщения этого чата, в котором их физически нет).
+  if (user) {
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { type: true },
+    });
+    if (chat?.type === "FAVORITES") {
+      // FAVORITES = "Saved Messages" Telegram-стиля.
+      // Собираем два источника:
+      //   1) Сообщения, физически отправленные в этот чат (заметки самому себе)
+      //   2) Сообщения из других чатов, добавленные через звёздочку (FavoriteMessage)
+      // Объединяем и сортируем по createdAt.
+      const messageInclude = {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+        replyTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        readReceipts: {
+          select: {
+            userId: true,
+            readAt: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        favorites: {
+          where: { userId: user.id },
+          select: { userId: true },
+          take: 1,
+        },
+      };
+
+      const [ownNotes, favs] = await Promise.all([
+        // Заметки самому себе — обычные сообщения этого чата
+        prisma.message.findMany({
+          where: { chatId, deleted: false },
+          include: messageInclude,
+        }),
+        // Избранные сообщения из других чатов
+        prisma.favoriteMessage.findMany({
+          where: { userId: user.id },
+          include: { message: { include: messageInclude } },
+        }),
+      ]);
+
+      const favMessages = favs
+        .map((f: { message: any }) => f.message)
+        .filter((m: any) => m && !m.deleted && m.chatId !== chatId);
+
+      const all = [...ownNotes, ...favMessages].sort(
+        (a: any, b: any) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+
+      return all;
+    }
+  }
+
   return await prisma.message.findMany({
     where: { chatId },
     include: {
@@ -455,7 +545,15 @@ export async function getMessages(chatId: string) {
             }
           }
         }
-      }
+      },
+      // Звёздочка для текущего юзера — boolean флаг через pre-фильтрованный include
+      favorites: user
+        ? {
+            where: { userId: user.id },
+            select: { userId: true },
+            take: 1,
+          }
+        : false,
     },
     orderBy: {
       createdAt: "asc"
@@ -1077,7 +1175,12 @@ export async function getUserRoleInChat(chatId: string, userId: string) {
 }
 
 // Добавление участника в чат с ролью
-export async function addChatMember(chatId: string, userId: string, role: ChatRole = 'MEMBER') {
+export async function addChatMember(
+  chatId: string,
+  userId: string,
+  role: ChatRole = 'MEMBER',
+  actorId?: string
+) {
   const chat = await prisma.chat.findUnique({
     where: { id: chatId },
     include: { server: true }
@@ -1098,7 +1201,7 @@ export async function addChatMember(chatId: string, userId: string, role: ChatRo
     throw new Error("Пользователь запретил добавление в чаты");
   }
   
-  return await prisma.chatMember.upsert({
+  const result = await prisma.chatMember.upsert({
     where: {
       userId_chatId: {
         userId,
@@ -1112,6 +1215,33 @@ export async function addChatMember(chatId: string, userId: string, role: ChatRo
       role
     }
   });
+
+  // Системное сообщение в чат + push в "Уведомления" приглашённого
+  // (best-effort, не падаем если что-то пошло не так)
+  try {
+    const { postSystemMessage, postNotification } = await import("@/app/lib/system-messages");
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, username: true },
+    });
+    const targetName = target?.displayName || target?.username || "Пользователь";
+
+    if (actorId && actorId !== userId) {
+      const actor = await prisma.user.findUnique({
+        where: { id: actorId },
+        select: { displayName: true, username: true },
+      });
+      const actorName = actor?.displayName || actor?.username || "Кто-то";
+      await postSystemMessage(chatId, `👋 ${actorName} добавил(-а) ${targetName}`, actorId);
+      await postNotification(userId, `📥 Вас добавили в «${chat.name || "чат"}»`);
+    } else {
+      await postSystemMessage(chatId, `👋 ${targetName} присоединился(-ась)`, userId);
+    }
+  } catch (e) {
+    console.error("[addChatMember] system message failed:", e);
+  }
+
+  return result;
 }
 
 // Изменение роли участника
@@ -1176,7 +1306,7 @@ export async function removeChatMember(chatId: string, targetUserId: string, cur
   if (currentUserRole === 'CREATOR' || 
       (currentUserRole === 'ADMIN' && targetRole !== 'ADMIN') ||
       currentUserId === targetUserId) {
-    return await prisma.chatMember.delete({
+    const result = await prisma.chatMember.delete({
       where: {
         userId_chatId: {
           userId: targetUserId,
@@ -1184,6 +1314,32 @@ export async function removeChatMember(chatId: string, targetUserId: string, cur
         }
       }
     });
+
+    // Системное сообщение
+    try {
+      const { postSystemMessage, postNotification } = await import("@/app/lib/system-messages");
+      const target = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { displayName: true, username: true },
+      });
+      const targetName = target?.displayName || target?.username || "Пользователь";
+
+      if (currentUserId === targetUserId) {
+        await postSystemMessage(chatId, `👋 ${targetName} вышел(-ла)`, targetUserId);
+      } else {
+        const actor = await prisma.user.findUnique({
+          where: { id: currentUserId },
+          select: { displayName: true, username: true },
+        });
+        const actorName = actor?.displayName || actor?.username || "Кто-то";
+        await postSystemMessage(chatId, `🚪 ${actorName} удалил(-а) ${targetName}`, currentUserId);
+        await postNotification(targetUserId, `❌ Вас удалили из «${chat.name || "чата"}»`);
+      }
+    } catch (e) {
+      console.error("[removeChatMember] system message failed:", e);
+    }
+
+    return result;
   }
   
   throw new Error("Not authorized to remove this member");
@@ -1359,7 +1515,20 @@ export async function checkCanWriteInChat(chatId: string, userId: string): Promi
   });
   
   if (!chat) return false;
-  
+
+  // NOTIFICATIONS — read-only для всех (только сервер пишет туда автоматически)
+  if (chat.type === "NOTIFICATIONS") return false;
+
+  // FAVORITES — может писать только владелец (это его персональные заметки).
+  // Псевдо-чат всегда имеет ровно одного участника-CREATOR.
+  if (chat.type === "FAVORITES") {
+    const creator = await prisma.chatMember.findFirst({
+      where: { chatId, role: "CREATOR" },
+      select: { userId: true },
+    });
+    return creator?.userId === userId;
+  }
+
   if (chat.type === "CHANNEL") {
     const userRole = await getUserRoleInChat(chatId, userId);
     const isOwner = chat.serverId ? chat.server?.ownerId === userId : false;

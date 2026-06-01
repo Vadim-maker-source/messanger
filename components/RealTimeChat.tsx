@@ -17,6 +17,7 @@ import {
   FileText, FileSpreadsheet, FileArchive, FileImage, FileVideo,
   FileAudio, FileCode, FileType,
   Sticker as StickerIcon,
+  Star, Bell, BellRing,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -81,6 +82,9 @@ interface Message {
   createdAt: Date;
   updatedAt: Date;
   deleted: boolean;
+  isSystem?: boolean;
+  /** Pre-filtered list — если есть хотя бы одна запись = это сообщение в избранном */
+  favorites?: { userId: string }[];
   replyToId?: string | null;
   replyTo?: Message | null;
   reactions?: { [key: string]: string[] } | null;
@@ -720,7 +724,7 @@ const ReadStatusIndicator = ({
 };
 
 // Компонент контекстного меню
-const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy, onSelect, onReadStatus, chatType }: any) => {
+const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply, onForward, onEdit, onDelete, onReact, onCopy, onSelect, onReadStatus, chatType, onToggleFavorite, isFavorite }: any) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -794,6 +798,17 @@ const MessageContextMenu = ({ x, y, message, isOwn, canDelete, onClose, onReply,
         >
           <Copy size={16} className="text-white" />
           Копировать текст
+        </button>
+        <button
+          onClick={() => { onToggleFavorite(); onClose(); }}
+          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10 transition-colors text-sm text-white"
+        >
+          <Star
+            size={16}
+            className={isFavorite ? "text-amber-400" : "text-white"}
+            fill={isFavorite ? "currentColor" : "none"}
+          />
+          {isFavorite ? "Убрать из избранного" : "В избранное"}
         </button>
         {isOwn && (
           <button
@@ -1159,7 +1174,13 @@ export default function RealTimeChat({
   const { getUserOnlineStatus, getFormattedLastSeen } = useStatus();
 
   const isChannel = chatType === "CHANNEL";
-  const canWrite = !isChannel || (isChannel && (userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin));
+  const isNotifications = chatType === "NOTIFICATIONS";
+  const isFavorites = chatType === "FAVORITES";
+  const canWrite = isNotifications
+    ? false
+    : isFavorites
+      ? true // в свой Saved Messages всегда можно писать
+      : !isChannel || (isChannel && (userRole === 'CREATOR' || userRole === 'ADMIN' || currentUser.isIdAdmin));
   const chatWallpapers = (settings?.preferences?.chatWallpapers || {}) as Record<string, string>;
   const chatWallpaper = chatWallpapers[chatId] || settings?.chatBackground || null;
 
@@ -1913,6 +1934,47 @@ const confirmDeleteMessage = async () => {
     navigator.clipboard.writeText(text);
   };
 
+  /** Переключает звёздочку на сообщении (избранное). Optimistic update. */
+  const handleToggleFavorite = async (message: Message) => {
+    const isFav = (message.favorites?.length ?? 0) > 0;
+
+    // Optimistic UI — сразу меняем флаг локально
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === message.id
+          ? {
+              ...m,
+              favorites: isFav ? [] : [{ userId: currentUser.id }],
+            }
+          : m
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/messages/${message.id}/favorite`, {
+        method: isFav ? "DELETE" : "POST",
+      });
+      if (!res.ok) {
+        // Откат
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  favorites: isFav ? [{ userId: currentUser.id }] : [],
+                }
+              : m
+          )
+        );
+        toast.error("Не удалось изменить избранное");
+      } else {
+        toast.success(isFav ? "Убрано из избранного" : "В избранном");
+      }
+    } catch {
+      toast.error("Ошибка сети");
+    }
+  };
+
   const scrollToMessage = (messageId: string) => {
     const element = document.getElementById(`message-${messageId}`);
     if (element) {
@@ -2244,7 +2306,26 @@ const renderMessage = (message: Message) => {
   const isSelected = selectedMessages.has(message.id);
   const isDeleting = deletingMessages.has(message.id);
   const displayName = isOwn ? "Вы" : (message.user.displayName || message.user.username);
-  
+  const isFavorite = (message.favorites?.length ?? 0) > 0;
+
+  // ─── Системное сообщение — плашка по центру без bubble ───────────────
+  if (message.isSystem) {
+    return (
+      <motion.div
+        key={message.id}
+        id={`message-${message.id}`}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="flex justify-center my-4"
+      >
+        <div className="px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-xs text-white/60 text-center max-w-md">
+          {message.content}
+        </div>
+      </motion.div>
+    );
+  }
+
   // старые peerjs-ссылки могут остаться в истории — показываем как текст
   const incomingPeerId = null;
 
@@ -2352,6 +2433,14 @@ const renderMessage = (message: Message) => {
 
           {/* Футер сообщения: время, изменение, статус прочтения */}
           <div className="flex items-center justify-end gap-2 mt-1 pb-2 px-4">
+            {isFavorite && (
+              <Star
+                size={12}
+                className="text-amber-400 shrink-0"
+                fill="currentColor"
+                strokeWidth={0}
+              />
+            )}
             <p className="text-[14px] text-white/40 font-medium">
               {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </p>
@@ -3636,6 +3725,11 @@ const handleUploadFilesWithCaption = async () => {
       copyMessageText(contextMenu.message.content);
       setContextMenu(null);
     }}
+    onToggleFavorite={() => {
+      handleToggleFavorite(contextMenu.message);
+      setContextMenu(null);
+    }}
+    isFavorite={(contextMenu.message.favorites?.length ?? 0) > 0}
   />
 )}
 

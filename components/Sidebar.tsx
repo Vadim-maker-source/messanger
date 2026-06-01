@@ -7,7 +7,7 @@ import {
   CheckCheck, Clock, MoreVertical, Settings, LogOut, 
   User, HelpCircle, FolderPlus, Pin, Bell, BellOff, Moon, Sun,
   Mic, Image, FileText, Loader2, Archive, ArchiveRestore, PinOff,
-  ChevronRight, Trash2, ShieldOff, Shield
+  ChevronRight, Trash2, ShieldOff, Shield, Star
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -259,14 +259,42 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
   const getItemDate = (i: ChatItem) =>
     new Date(i.lastMessage?.createdAt ?? i.updatedAt ?? 0).getTime();
 
-  const allItems = [...servers, ...chats].sort((a, b) => {
+  // Псевдо-чаты — всегда сверху, независимо от pin/archive
+  const specialChats = chats.filter(c => c.type === 'NOTIFICATIONS' || c.type === 'FAVORITES');
+  const regularChats = chats.filter(c => c.type !== 'NOTIFICATIONS' && c.type !== 'FAVORITES');
+
+  // Сортировка: FAVORITES → NOTIFICATIONS (либо как удобно)
+  const sortedSpecial = [...specialChats].sort((a, b) => {
+    if (a.type === 'FAVORITES') return -1;
+    if (b.type === 'FAVORITES') return 1;
+    return 0;
+  });
+
+  const allItems = [...sortedSpecial, ...servers, ...regularChats].sort((a, b) => {
+    // Псевдо-чаты — всегда сверху
+    const aSpecial = a.type === 'NOTIFICATIONS' || a.type === 'FAVORITES';
+    const bSpecial = b.type === 'NOTIFICATIONS' || b.type === 'FAVORITES';
+    if (aSpecial && !bSpecial) return -1;
+    if (bSpecial && !aSpecial) return 1;
+    if (aSpecial && bSpecial) {
+      // FAVORITES перед NOTIFICATIONS
+      if (a.type === 'FAVORITES') return -1;
+      if (b.type === 'FAVORITES') return 1;
+      return 0;
+    }
     const ap = localPrefs[a.id]?.isPinned ? 1 : 0, bp = localPrefs[b.id]?.isPinned ? 1 : 0;
     if (bp !== ap) return bp - ap;
     return getItemDate(b) - getItemDate(a);
   });
 
-  const visibleItems = allItems.filter(i => !(localPrefs[i.id]?.isArchived));
-  const archivedItems = allItems.filter(i => localPrefs[i.id]?.isArchived);
+  // Псевдо-чаты не архивируются
+  const visibleItems = allItems.filter(i => {
+    if (i.type === 'NOTIFICATIONS' || i.type === 'FAVORITES') return true;
+    return !(localPrefs[i.id]?.isArchived);
+  });
+  const archivedItems = allItems.filter(i =>
+    i.type !== 'NOTIFICATIONS' && i.type !== 'FAVORITES' && localPrefs[i.id]?.isArchived
+  );
   const archivedCount = archivedItems.length;
 
   useEffect(() => {
@@ -407,16 +435,32 @@ export default function Sidebar({ items }: { items: ChatItem[] }) {
                 >
                   {visibleItems.map(item => {
                     const isServer = item.uiType === 'SERVER';
+                    const isNotifications = item.type === 'NOTIFICATIONS';
+                    const isFavorites = item.type === 'FAVORITES';
+                    const isSpecial = isNotifications || isFavorites;
                     const pref = localPrefs[item.id] ?? { isPinned: false, isArchived: false, isMuted: false };
                     return (
                       <motion.button key={item.id}
                         onClick={() => isServer ? handleServerClick(item) : handleNavigation(`/chat/${item.id}`)}
-                        onContextMenu={e => isServer ? handleServerContextMenu(e, item) : handleChatContextMenu(e, item)}
+                        onContextMenu={e => {
+                          if (isSpecial) { e.preventDefault(); return; } // нет контекст-меню у псевдо-чатов
+                          isServer ? handleServerContextMenu(e, item) : handleChatContextMenu(e, item);
+                        }}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-all group ${isServer && expandedServer === item.id ? 'bg-violet-500/10' : ''}`}
                       >
                         <div className="relative shrink-0">
-                          <Avatar image={item.image} title={item.title} size={48} />
-                          {!isServer && item.isTyping && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0f0f12]" />}
+                          {isFavorites ? (
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 grid place-items-center shadow-lg shadow-amber-500/20">
+                              <Star size={22} className="text-white" fill="currentColor" strokeWidth={0} />
+                            </div>
+                          ) : isNotifications ? (
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 grid place-items-center shadow-lg shadow-violet-500/20">
+                              <Bell size={22} className="text-white" fill="currentColor" strokeWidth={0} />
+                            </div>
+                          ) : (
+                            <Avatar image={item.image} title={item.title} size={48} />
+                          )}
+                          {!isServer && !isSpecial && item.isTyping && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#0f0f12]" />}
                         </div>
                         {chatsWidth > 100 && (
                           <div className="flex-1 min-w-0">
