@@ -19,40 +19,29 @@ export async function GET(req: NextRequest) {
   const rawToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   const currentHash = rawToken ? hashSessionToken(rawToken) : null;
 
-  // Lazy backfill — если текущая сессия не записана в БД, создаём
+  // Lazy backfill — если текущая сессия не записана в БД, создаём.
+  // Делаем upsert чтобы избежать гонки между параллельными запросами.
   if (currentHash) {
-    const exists = await prisma.session.findUnique({
-      where: { tokenHash: currentHash },
-    });
-    if (!exists) {
+    try {
       const ua = req.headers.get("user-agent") || "";
       const { deviceType, deviceName } = parseDeviceInfo(ua);
-      try {
-        await prisma.session.create({
-          data: {
-            userId: user.id,
-            tokenHash: currentHash,
-            deviceType: deviceType === "mobile" ? "mobile" : "mobile",
-            deviceName,
-            ipAddress: getClientIp(req),
-            userAgent: ua.slice(0, 500),
-            expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000),
-          },
-        });
-      } catch (e) {
-        console.error("[sessions] backfill failed:", e);
-      }
-    } else {
-      // Обновляем lastActiveAt раз в 5 минут (не на каждый запрос)
-      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-      if (exists.lastActiveAt < fiveMinAgo) {
-        prisma.session
-          .update({
-            where: { id: exists.id },
-            data: { lastActiveAt: new Date() },
-          })
-          .catch(() => {});
-      }
+      await prisma.session.upsert({
+        where: { tokenHash: currentHash },
+        create: {
+          userId: user.id,
+          tokenHash: currentHash,
+          deviceType: deviceType === "mobile" ? "mobile" : "mobile",
+          deviceName,
+          ipAddress: getClientIp(req),
+          userAgent: ua.slice(0, 500),
+          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000),
+        },
+        update: {
+          lastActiveAt: new Date(),
+        },
+      });
+    } catch (e) {
+      console.error("[sessions] upsert failed:", e);
     }
   }
 

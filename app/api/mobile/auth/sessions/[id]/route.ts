@@ -7,16 +7,25 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getMobileUserFromRequest(req);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const user = await getMobileUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const { id } = await params;
-  const session = await prisma.session.findUnique({ where: { id } });
-  if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (session.userId !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const { id } = await params;
+    const session = await prisma.session.findUnique({ where: { id } });
+    if (!session) {
+      return NextResponse.json({ error: "Сессия не найдена" }, { status: 404 });
+    }
+    if (session.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.session.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    console.error("[sessions/delete] error:", e);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
-
-  await prisma.session.delete({ where: { id } });
-  return NextResponse.json({ success: true });
 }
