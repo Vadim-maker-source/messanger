@@ -128,6 +128,44 @@ app.prepare().then(() => {
     }
   });
 
+  // ─── Presence: счётчик активных сокетов на юзера ───────────────────────
+  // При первом socket.connect юзер становится online (broadcast "presence").
+  // При последнем disconnect — через debounce (5с) помечаем offline.
+  // Debounce нужен чтобы при reconnect/page reload статус не флипал.
+  const onlineUsers = new Map(); // userId → { count, offlineTimer }
+
+  async function markOnline(userId) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { isOnline: true, lastActive: new Date() },
+      });
+      io.to("presence").emit("presence:user-status-change", {
+        userId,
+        isOnline: true,
+        lastActive: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error("[presence] markOnline failed:", e?.message);
+    }
+  }
+
+  async function markOffline(userId) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { isOnline: false, lastSeen: new Date(), lastActive: new Date() },
+      });
+      io.to("presence").emit("presence:user-status-change", {
+        userId,
+        isOnline: false,
+        lastActive: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error("[presence] markOffline failed:", e?.message);
+    }
+  }
+
   // ─── Connection handler ────────────────────────────────────────────────
   io.on("connection", (socket) => {
     const userId = socket.data.userId;
@@ -138,6 +176,18 @@ app.prepare().then(() => {
     socket.join(`user-${userId}`);
     socket.join(`sidebar-${userId}`);
     socket.join("presence");
+
+    // Presence: учёт активных сокетов
+    const entry = onlineUsers.get(userId) || { count: 0, offlineTimer: null };
+    if (entry.offlineTimer) {
+      clearTimeout(entry.offlineTimer);
+      entry.offlineTimer = null;
+    }
+    entry.count += 1;
+    onlineUsers.set(userId, entry);
+    if (entry.count === 1) {
+      markOnline(userId);
+    }
 
     // Подписка на канал. Клиент шлёт `subscribe` с именем канала.
     // Server проверяет права и добавляет socket в room.
@@ -186,6 +236,25 @@ app.prepare().then(() => {
 
     socket.on("disconnect", (reason) => {
       if (dev) console.log(`[socket] disconnected: ${userId} (${reason})`);
+
+      // Presence: уменьшаем счётчик активных сокетов
+      const e = onlineUsers.get(userId);
+      if (!e) return;
+      e.count = Math.max(0, e.count - 1);
+      if (e.count === 0) {
+        // Дебаунс 5с — если за это время будет reconnect (refresh страницы,
+        // переключение wifi/4g), статус offline не пишем.
+        e.offlineTimer = setTimeout(() => {
+          const fresh = onlineUsers.get(userId);
+          if (fresh && fresh.count === 0) {
+            markOffline(userId);
+            onlineUsers.delete(userId);
+          }
+        }, 5000);
+        onlineUsers.set(userId, e);
+      } else {
+        onlineUsers.set(userId, e);
+      }
     });
   });
 

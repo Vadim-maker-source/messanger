@@ -164,47 +164,37 @@ export const StatusProvider: React.FC<StatusProviderProps> = ({ children, curren
       isPageVisible.current = !document.hidden;
       
       if (isPageVisible.current) {
-        // Страница стала видимой - отмечаем онлайн
-        updateStatusOnServer(true);
+        // Страница стала видимой - локальное обновление UI
+        // (online-статус управляется socket-подключением)
         updateStatus(currentUserId, true);
       } else {
-        // Страница скрыта - отмечаем оффлайн
-        updateStatusOnServer(false);
+        // Страница скрыта - локально показываем offline
         updateStatus(currentUserId, false);
       }
     };
 
     const handleBeforeUnload = () => {
       isUnloading.current = true;
-      // Используем sendBeacon для надежной отправки
-      navigator.sendBeacon("/api/chat/status", JSON.stringify({ isOnline: false }));
+      // Socket disconnect при закрытии вкладки сам пометит offline на сервере
+      // через debounce 5с в server.js
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("beforeunload", handleBeforeUnload);
 
-    // Начальная установка статуса
-    updateStatusOnServer(true);
+    // Начальная установка статуса локально (online на сервере уже выставлен
+    // через socket-подключение из (chat)/layout.tsx)
     updateStatus(currentUserId, true);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      updateStatusOnServer(false);
       updateStatus(currentUserId, false);
     };
-  }, [currentUserId, updateStatus, updateStatusOnServer]);
+  }, [currentUserId, updateStatus]);
 
-  // Heartbeat интервал
-  useEffect(() => {
-    if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
-    
-    heartbeatInterval.current = setInterval(sendHeartbeat, 30000); // Каждые 30 секунд
-    
-    return () => {
-      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
-    };
-  }, [sendHeartbeat]);
+  // Heartbeat больше не нужен — server.js использует socket pings
+  // (pingInterval: 25s) для определения активности.
 
   // Подписка на Pusher события
   useEffect(() => {
