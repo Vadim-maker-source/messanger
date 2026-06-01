@@ -20,7 +20,6 @@ export async function GET(req: NextRequest) {
   const currentHash = rawToken ? hashSessionToken(rawToken) : null;
 
   // Lazy backfill — если текущая сессия не записана в БД, создаём.
-  // Делаем upsert чтобы избежать гонки между параллельными запросами.
   if (currentHash) {
     try {
       const ua = req.headers.get("user-agent") || "";
@@ -38,34 +37,63 @@ export async function GET(req: NextRequest) {
           expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000),
         },
         update: {
-          // Если имя устройства теперь известно лучше — обновим
           deviceName,
           deviceType,
           lastActiveAt: new Date(),
         },
       });
     } catch (e) {
-      console.error("[sessions] upsert failed:", e);
+      console.error("[sessions/list] upsert failed:", e);
     }
   }
 
-  const sessions = await prisma.session.findMany({
-    where: {
-      userId: user.id,
-      expiresAt: { gt: new Date() },
-      revokedAt: null,
-    },
-    orderBy: { lastActiveAt: "desc" },
-    select: {
-      id: true,
-      deviceType: true,
-      deviceName: true,
-      ipAddress: true,
-      lastActiveAt: true,
-      createdAt: true,
-      expiresAt: true,
-    },
-  });
-
-  return NextResponse.json({ sessions });
+  try {
+    const sessions = await prisma.session.findMany({
+      where: {
+        userId: user.id,
+        expiresAt: { gt: new Date() },
+        revokedAt: null,
+      },
+      orderBy: { lastActiveAt: "desc" },
+      select: {
+        id: true,
+        deviceType: true,
+        deviceName: true,
+        ipAddress: true,
+        lastActiveAt: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
+    return NextResponse.json({ sessions });
+  } catch (e) {
+    console.error("[sessions/list] findMany with revokedAt failed:", e);
+    // Fallback: возможно поле revokedAt ещё не появилось в БД
+    // (миграция не применилась). Пробуем без него.
+    try {
+      const sessions = await prisma.session.findMany({
+        where: {
+          userId: user.id,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { lastActiveAt: "desc" },
+        select: {
+          id: true,
+          deviceType: true,
+          deviceName: true,
+          ipAddress: true,
+          lastActiveAt: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      });
+      return NextResponse.json({ sessions });
+    } catch (e2) {
+      console.error("[sessions/list] fallback failed:", e2);
+      return NextResponse.json(
+        { error: "Прогоните prisma db push чтобы применить миграцию" },
+        { status: 500 }
+      );
+    }
+  }
 }
