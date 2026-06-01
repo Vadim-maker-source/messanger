@@ -244,7 +244,7 @@ function TechCard({ tech, index }: { tech: Tech; index: number }) {
           ) : tech.slug ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={`https://cdn.simpleicons.org/${tech.slug}/${tech.color}`}
+              src={`/images/${tech.slug}.svg`}
               alt={tech.name}
               className="w-8 h-8 transition-transform duration-500 group-hover:scale-110"
               loading="lazy"

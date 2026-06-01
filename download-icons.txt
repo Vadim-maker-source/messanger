@@ -1,0 +1,59 @@
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+
+const TECH_STACK = [
+  { name: "Next.js", slug: "nextdotjs", color: "ffffff" },
+  { name: "React", slug: "react", color: "61DAFB" },
+  { name: "TypeScript", slug: "typescript", color: "3178C6" },
+  { name: "Tailwind CSS", slug: "tailwindcss", color: "06B6D4" },
+  { name: "shadcn/ui", slug: "shadcnui", color: "ffffff" },
+  { name: "GSAP", slug: "greensock", color: "88CE02" },
+  { name: "Framer Motion", slug: "framer", color: "0055FF" },
+  { name: "Node.js", slug: "nodedotjs", color: "5FA04E" },
+  { name: "Prisma", slug: "prisma", color: "ffffff" },
+  { name: "PostgreSQL", slug: "postgresql", color: "4169E1" },
+  { name: "WebRTC", slug: "webrtc", color: "FFFFFF" },
+  { name: "Pusher", slug: "pusher", color: "300D4F" },
+  { name: "Socket.IO", slug: "socketdotio", color: "ffffff" },
+  { name: "Flutter", slug: "flutter", color: "02569B" },
+  { name: "Dart", slug: "dart", color: "0175C2" },
+  { name: "Firebase", slug: "firebase", color: "FFCA28" },
+  { name: "Yandex Cloud", slug: "yandexcloud", color: "5282FF" },
+  { name: "Vercel", slug: "vercel", color: "ffffff" },
+  { name: "Linux", slug: "linux", color: "FCC624" },
+  { name: "Docker", slug: "docker", color: "2496ED" },
+  { name: "Nginx", slug: "nginx", color: "009639" },
+  { name: "GitHub", slug: "github", color: "ffffff" },
+];
+
+const outputDir = path.join(process.cwd(), "public", "images");
+
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir, { recursive: true });
+}
+
+async function downloadIcon(tech) {
+  if (!tech.slug) return;
+
+  const url = `https://cdn.simpleicons.org/${tech.slug}/${tech.color}`;
+  const filename = `${tech.slug}.svg`;
+  const filepath = path.join(outputDir, filename);
+
+  try {
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+    });
+
+    fs.writeFileSync(filepath, response.data);
+
+    console.log(`✓ ${filename}`);
+  } catch (error) {
+    console.error(`✗ ${tech.name}`, error.message);
+  }
+}
+
+(async () => {
+  await Promise.all(TECH_STACK.map(downloadIcon));
+  console.log("Готово");
+})();
