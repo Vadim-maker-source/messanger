@@ -24,19 +24,23 @@ export async function GET(req: NextRequest) {
   if (currentHash) {
     try {
       const ua = req.headers.get("user-agent") || "";
-      const { deviceType, deviceName } = parseDeviceInfo(ua);
+      const customName = req.headers.get("x-device-name");
+      const { deviceType, deviceName } = parseDeviceInfo(ua, customName);
       await prisma.session.upsert({
         where: { tokenHash: currentHash },
         create: {
           userId: user.id,
           tokenHash: currentHash,
-          deviceType: deviceType === "mobile" ? "mobile" : "mobile",
+          deviceType,
           deviceName,
           ipAddress: getClientIp(req),
           userAgent: ua.slice(0, 500),
           expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000),
         },
         update: {
+          // Если имя устройства теперь известно лучше — обновим
+          deviceName,
+          deviceType,
           lastActiveAt: new Date(),
         },
       });

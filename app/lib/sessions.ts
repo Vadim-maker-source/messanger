@@ -16,13 +16,34 @@ export function generateQrToken(): string {
 
 // ─── Парсинг User-Agent для отображения "Chrome on Windows" и т.д. ─────────
 
-export function parseDeviceInfo(userAgent: string | null | undefined): {
+/**
+ * Определяет тип устройства и читаемое имя из заголовков.
+ * Если задан X-Device-Name (мобила сообщает явно через device_info_plus) —
+ * используем его. Иначе парсим User-Agent.
+ */
+export function parseDeviceInfo(
+  userAgent: string | null | undefined,
+  customDeviceName?: string | null
+): {
   deviceType: "web" | "mobile" | "desktop";
   deviceName: string;
 } {
+  // Приоритет — явное имя от мобильного клиента
+  if (customDeviceName && customDeviceName.trim()) {
+    return {
+      deviceType: "mobile",
+      deviceName: customDeviceName.trim().slice(0, 100),
+    };
+  }
+
   const ua = (userAgent || "").toLowerCase();
 
   if (!ua) return { deviceType: "web", deviceName: "Unknown device" };
+
+  // Flutter / Dart UA — мобильный без названия устройства
+  if (ua.includes("dart") || ua.includes("flutter")) {
+    return { deviceType: "mobile", deviceName: "Talky Mobile" };
+  }
 
   // Browser
   let browser = "Browser";

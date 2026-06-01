@@ -69,12 +69,13 @@ export async function POST(request: NextRequest) {
     // ещё не примениться).
     try {
       const ua = request.headers.get("user-agent") || "";
-      const { deviceType, deviceName } = parseDeviceInfo(ua);
+      const customName = request.headers.get("x-device-name");
+      const { deviceType, deviceName } = parseDeviceInfo(ua, customName);
       await prisma.session.create({
         data: {
           userId: user.id,
           tokenHash: hashSessionToken(token),
-          deviceType: deviceType === "mobile" ? "mobile" : "mobile",
+          deviceType,
           deviceName,
           ipAddress: getClientIp(request),
           userAgent: ua.slice(0, 500),
