@@ -58,6 +58,17 @@ export async function POST(req: NextRequest) {
     });
 
     pusherServer.trigger(targetChatId, "new-message", forwarded).catch(() => {});
+
+    // sidebar-update всем участникам
+    prisma.chatMember
+      .findMany({ where: { chatId: targetChatId }, select: { userId: true } })
+      .then((members) => {
+        for (const m of members) {
+          pusherServer.trigger(`user-${m.userId}`, "sidebar-update", { chatId: targetChatId }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
     return NextResponse.json({ success: true, data: forwarded });
   } catch (e) {
     return errorResponse(e, "messages-forward");

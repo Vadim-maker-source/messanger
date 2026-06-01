@@ -91,6 +91,19 @@ export async function POST(req: NextRequest) {
 
     pusherServer.trigger(chatId, "new-message", message).catch(() => {});
 
+    // Real-time обновление sidebar/home у всех участников чата.
+    // Достаём всех members этого чата и emit'им им sidebar-update.
+    prisma.chatMember
+      .findMany({ where: { chatId }, select: { userId: true } })
+      .then((members) => {
+        for (const m of members) {
+          pusherServer
+            .trigger(`user-${m.userId}`, "sidebar-update", { chatId })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+
     // FCM: отправляем всем участникам кроме отправителя (с учётом настроек)
     const senderName = user.displayName || user.username;
     const msgText = fileUrl

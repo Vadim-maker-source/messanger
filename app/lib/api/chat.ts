@@ -933,6 +933,17 @@ export async function forwardMessage(messageId: string, targetChatId: string) {
   });
 
   pusherServer.trigger(targetChatId, "new-message", forwardedMessage).catch((e) => console.error("[Pusher]", e?.message));
+
+  // sidebar-update для всех участников targetChat
+  prisma.chatMember
+    .findMany({ where: { chatId: targetChatId }, select: { userId: true } })
+    .then((members) => {
+      for (const m of members) {
+        pusherServer.trigger(`user-${m.userId}`, "sidebar-update", { chatId: targetChatId }).catch(() => {});
+      }
+    })
+    .catch(() => {});
+
   return forwardedMessage;
 }
 
@@ -1419,6 +1430,16 @@ export async function sendMessage(
     where: { id: chatId },
     data: { updatedAt: new Date() }
   });
+
+  // Real-time обновление sidebar для всех участников (web + mobile)
+  prisma.chatMember
+    .findMany({ where: { chatId }, select: { userId: true } })
+    .then((members) => {
+      for (const m of members) {
+        pusherServer.trigger(`user-${m.userId}`, "sidebar-update", { chatId }).catch(() => {});
+      }
+    })
+    .catch(() => {});
 
   // FCM: уведомляем участников чата
   const chatWithUsers = await prisma.chat.findUnique({

@@ -17,8 +17,16 @@ npm ci --prefer-offline --no-audit --no-fund
 echo "[+] Prisma generate..."
 npx prisma generate
 
-echo "[+] Prisma migrate deploy..."
-npx prisma migrate deploy || echo "[!] Миграция не применилась (возможно, уже применена)"
+echo "[+] Prisma db push (синхронизация schema с БД)..."
+# Используем db push вместо migrate deploy потому что миграционная история
+# не консистентна (P3005). db push — аддитивная операция: добавляет новые
+# поля и enum-значения, но не удаляет существующие данные.
+# Опасные изменения (удаление колонок) требовали бы --accept-data-loss.
+npx prisma db push || echo "[!] db push не применился — проверьте логи выше"
+
+echo "[+] Очистка старого билда .next..."
+# Без этого иногда остаются stale chunks → ChunkLoadError при reload
+rm -rf .next
 
 echo "[+] Build..."
 # Поднимаем Node heap до 2 GB чтобы TS check не падал на слабом VPS.
