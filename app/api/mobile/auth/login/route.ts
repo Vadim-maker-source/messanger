@@ -4,6 +4,7 @@ import { prisma } from "@/app/lib/prisma";
 import { generateToken } from "@/app/lib/token";
 import { checkRateLimit, rateLimited } from "@/app/lib/rate-limit";
 import { asEmail, badRequest, errorResponse } from "@/app/lib/validate";
+import { hashSessionToken, parseDeviceInfo, getClientIp } from "@/app/lib/sessions";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,6 +63,28 @@ export async function POST(request: NextRequest) {
     }
 
     const token = generateToken(user.id, user.email);
+
+    // Регистрируем активную сессию в БД для отображения в "Устройства".
+    // Делаем best-effort — не падаем если запись не создалась (БД миграция могла
+    // ещё не примениться).
+    try {
+      const ua = request.headers.get("user-agent") || "";
+      const { deviceType, deviceName } = parseDeviceInfo(ua);
+      await prisma.session.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashSessionToken(token),
+          deviceType: deviceType === "mobile" ? "mobile" : "mobile",
+          deviceName,
+          ipAddress: getClientIp(request),
+          userAgent: ua.slice(0, 500),
+          // mobile-токены живут долго — 90 дней
+          expiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000),
+        },
+      });
+    } catch (e) {
+      console.error("[login] failed to write session:", e);
+    }
 
     // Возвращаем только нужные поля — никаких автоматических spread'ов
     return NextResponse.json(
