@@ -44,11 +44,11 @@ const DEVELOPERS: Developer[] = [
     role: "Founder · Full-stack & Web & Mobile & Desctop",
     about:
       "Строю Talky с нуля: frontend на Next.js, TypeScript, backend на Node.js, мобильное приложение на Flutter, WebRTC-звонки, real-time сообщения. Люблю чистую архитектуру и минимализм в UI.",
-    experience: "1 месяц работы над Talky, 2 года опыта разработки Full-stack, 1 месяц разработки на Flutter, 2 недели опыта в DevOps и настройке серверов, 3 года в IT.",
+    experience: "2 месяца работы над Talky, 2 года опыта разработки Full-stack, 1 месяц разработки на Flutter, 2 недели опыта в DevOps и настройке серверов, 3 года в IT.",
     skills: [
-      "Next.js", "TypeScript", "Flutter", "Dart", "Prisma",
+      "Next.js", "TypeScript", "Flutter", "Dart", "Prisma", "SQL", "SQLite",
       "PostgreSQL", "Python", "WebRTC", "Pusher", "Socket.io", "Tailwind",
-      "Framer Motion", "GSAP", "Firebase", "Yandex Cloud", "Linux", "Github", "Linux", "Docker", "Nginx", "C++", "Python"
+      "Framer Motion", "GSAP", "Firebase", "Yandex Cloud", "Linux", "Github", "Linux", "Docker", "Nginx", "C++", "Python", "Bash"
     ],
     avatar: "В",
     avatarImage: "/images/logo.jpg",

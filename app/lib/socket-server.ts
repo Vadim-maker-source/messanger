@@ -40,7 +40,7 @@ async function emitViaHttp(channel: string, event: string, data: unknown): Promi
     return false;
   }
   const port = process.env.PORT || "3000";
-  const url = `http://127.0.0.1:${port}/__internal_emit`;
+  const url = `http://192.168.0.109:${port}/__internal_emit`;
   try {
     const res = await fetch(url, {
       method: "POST",
